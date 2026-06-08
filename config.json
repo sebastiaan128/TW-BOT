@@ -9,16 +9,16 @@
   "render": {
     "promoted": {
       "assetPath": "assets/Promoted.png",
-      "x": 4150, "y": 2180, "maxWidth": 2200,
+      "x": 4180, "y": 2300, "maxWidth": 2150,
       "color": "#2a1a0a", "fontFamily": "sans-serif",
-      "fontWeight": "bold", "baseFontSize": 220,
+      "fontWeight": "bold", "baseFontSize": 240,
       "fontPath": "assets/fonts/Anton-Regular.ttf"
     },
     "demoted": {
       "assetPath": "assets/Demoted.png",
-      "x": 4150, "y": 2180, "maxWidth": 2200,
+      "x": 4180, "y": 2300, "maxWidth": 2150,
       "color": "#f5e9d0", "fontFamily": "sans-serif",
-      "fontWeight": "bold", "baseFontSize": 220,
+      "fontWeight": "bold", "baseFontSize": 240,
       "fontPath": "assets/fonts/Anton-Regular.ttf"
     }
   }
