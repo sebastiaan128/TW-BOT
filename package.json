@@ -7,6 +7,7 @@
     "test": "node --test",
     "start": "node --env-file=.env src/index.js",
     "dry-run": "node --env-file=.env src/index.js --dry-run",
+    "mark-seen": "node --env-file=.env src/index.js --mark-seen",
     "probe": "node --env-file=.env scripts/probe-tier.js"
   },
   "dependencies": {

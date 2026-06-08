@@ -2,9 +2,8 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { loadConfig } from './config.js';
-import { buildCurrentSnapshot } from './coc.js';
+import { detectMovements } from './coc.js';
 import { readSnapshot, writeSnapshot } from './snapshot.js';
-import { diffSnapshots } from './diff.js';
 import { renderUsername } from './render.js';
 import { postGraphic, addReaction } from './discord.js';
 
@@ -14,26 +13,30 @@ async function saveLocal(dir, filename, buffer) {
 }
 
 const defaultDeps = {
-  loadConfig, buildCurrentSnapshot, readSnapshot, writeSnapshot,
-  diffSnapshots, renderUsername, postGraphic, addReaction, saveLocal,
+  loadConfig, detectMovements, readSnapshot, writeSnapshot,
+  renderUsername, postGraphic, addReaction, saveLocal,
 };
 
 export async function run(options = {}, deps = defaultDeps) {
-  const { dryRun = false } = options;
-  // Merge caller deps over defaults so diffSnapshots etc. are always available
+  const { dryRun = false, markSeen = false, force = false } = options;
   const d = { ...defaultDeps, ...deps };
 
   const config = d.loadConfig();
+  const { season, promotions, demotions } = await d.detectMovements(config.clanTags, config.cocApiKey);
 
-  const current = await d.buildCurrentSnapshot(config.clanTags, config.cocApiKey);
-  const previous = await d.readSnapshot(config.snapshotPath);
-
-  if (!previous) {
-    if (!dryRun) await d.writeSnapshot(config.snapshotPath, current);
-    return { firstRun: true, posted: [] };
+  // mark-seen: record the current reset as announced without posting. Use after
+  // posting a reset manually, or on first deploy to skip the current week.
+  if (markSeen) {
+    await d.writeSnapshot(config.snapshotPath, { lastAnnouncedSeason: season });
+    return { season, marked: true, posted: [] };
   }
 
-  const { promotions, demotions } = d.diffSnapshots(previous, current);
+  const state = await d.readSnapshot(config.snapshotPath);
+  const alreadyAnnounced = state?.lastAnnouncedSeason === season;
+  if (alreadyAnnounced && !force && !dryRun) {
+    return { season, alreadyAnnounced: true, posted: [] };
+  }
+
   const jobs = [
     ...promotions.map((p) => ({ type: 'promoted', ...p })),
     ...demotions.map((p) => ({ type: 'demoted', ...p })),
@@ -48,8 +51,8 @@ export async function run(options = {}, deps = defaultDeps) {
     } else {
       const content = config.messages?.[job.type] ?? '';
       const message = await d.postGraphic(config.channelId, { filename, imageBuffer: buffer, content }, config.botToken);
-      // Best-effort emoji reaction under the post. Never let a reaction failure
-      // abort the run or block the snapshot write.
+      // Best-effort emoji reaction under the post. A reaction failure must never
+      // abort the run or block the state write.
       const emoji = config.reactions?.[job.type];
       if (emoji && message?.id && message?.channel_id) {
         try {
@@ -62,14 +65,19 @@ export async function run(options = {}, deps = defaultDeps) {
     posted.push(job);
   }
 
-  if (!dryRun) await d.writeSnapshot(config.snapshotPath, current);
-  return { firstRun: false, posted };
+  // Record the reset as announced only after every post succeeded.
+  if (!dryRun) await d.writeSnapshot(config.snapshotPath, { lastAnnouncedSeason: season });
+  return { season, posted };
 }
 
 // CLI entrypoint
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const dryRun = process.argv.includes('--dry-run');
-  run({ dryRun })
+  const options = {
+    dryRun: process.argv.includes('--dry-run'),
+    markSeen: process.argv.includes('--mark-seen'),
+    force: process.argv.includes('--force'),
+  };
+  run(options)
     .then((r) => { console.log('Done:', JSON.stringify(r)); })
     .catch((e) => { console.error('Run failed:', e.message); process.exit(1); });
 }

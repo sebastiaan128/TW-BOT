@@ -1,20 +1,30 @@
 // test/coc.test.js
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { getTier, fetchClanMembers, buildCurrentSnapshot } from '../src/coc.js';
+import {
+  getTier, tierFromId, latestHistoryEntry,
+  fetchClanMembers, fetchLeagueHistory, detectMovements,
+} from '../src/coc.js';
 
-test('getTier maps member leagueTier ids (36=L1, 35=L2); lower is untracked', () => {
+test('tierFromId / getTier map 36=L1, 35=L2, else null', () => {
+  assert.equal(tierFromId(105000036), 'I');
+  assert.equal(tierFromId(105000035), 'II');
+  assert.equal(tierFromId(105000034), null);
   assert.equal(getTier({ leagueTier: { id: 105000036 } }), 'I');
   assert.equal(getTier({ leagueTier: { id: 105000035 } }), 'II');
-  // Below Legend 2 — not tracked, the bot only posts L1<->L2.
-  assert.equal(getTier({ leagueTier: { id: 105000034 } }), null);
-  assert.equal(getTier({ leagueTier: { id: 105000029 } }), null);
-});
-
-test('getTier returns null when leagueTier is missing', () => {
   assert.equal(getTier({}), null);
   assert.equal(getTier({ leagueTier: null }), null);
-  assert.equal(getTier({ league: { id: 29000022 } }), null); // trophy-league field is not the tier
+});
+
+test('latestHistoryEntry picks the highest seasonId regardless of order', () => {
+  assert.equal(latestHistoryEntry([]), null);
+  assert.equal(latestHistoryEntry(null), null);
+  const items = [
+    { leagueSeasonId: 1779685200, leagueTierId: 105000036 },
+    { leagueSeasonId: 1780290000, leagueTierId: 105000035 },
+    { leagueSeasonId: 1779080400, leagueTierId: 105000036 },
+  ];
+  assert.equal(latestHistoryEntry(items).leagueSeasonId, 1780290000);
 });
 
 function fakeFetch(map) {
@@ -38,26 +48,40 @@ test('fetchClanMembers throws on non-ok response', async () => {
   await assert.rejects(() => fetchClanMembers('#ABC', 'key', { fetchImpl }), /403/);
 });
 
-test('buildCurrentSnapshot reads leagueTier from members and keeps only L1/L2', async () => {
+test('fetchLeagueHistory hits the leaguehistory endpoint and returns items', async () => {
+  let seenUrl;
+  const fetchImpl = async (url) => { seenUrl = url; return { ok: true, status: 200, json: async () => ({ items: [{ leagueSeasonId: 1, leagueTierId: 105000036 }] }) }; };
+  const items = await fetchLeagueHistory('#P1', 'key', { fetchImpl });
+  assert.match(seenUrl, /\/players\/%23P1\/leaguehistory$/);
+  assert.equal(items[0].leagueTierId, 105000036);
+});
+
+test('detectMovements finds L2->L1 / L1->L2 at the latest reset and skips stale histories', async () => {
   const fetchImpl = fakeFetch({
-    '%23C1/members': { items: [
-      { tag: '#P1', name: 'Alice', league: { id: 29000022 }, leagueTier: { id: 105000036 } }, // L1 -> I
-      { tag: '#P2', name: 'Bob', league: { id: 29000000 } },                                   // no leagueTier -> skip
-      // Unranked by trophies but Legend 1 by tier — must still be tracked (the TW Mootje case):
-      { tag: '#M', name: 'TW Mootje', league: { id: 29000000 }, leagueTier: { id: 105000036 } },
+    // current members across two clans
+    '/clans/%23C1/members': { items: [
+      { tag: '#P1', name: 'Alice', leagueTier: { id: 105000036 } }, // now L1
+      { tag: '#P2', name: 'Bob', leagueTier: { id: 105000035 } },   // now L2
+      { tag: '#P9', name: 'Unranked', league: { id: 29000000 } },   // no leagueTier -> ignored
     ] },
-    '%23C2/members': { items: [
-      { tag: '#P3', name: 'Carol', league: { id: 29000022 }, leagueTier: { id: 105000035 } }, // L2 -> II
-      { tag: '#P4', name: 'Dave', league: { id: 29000022 }, leagueTier: { id: 105000034 } },  // below L2 -> skip
+    '/clans/%23C2/members': { items: [
+      { tag: '#P5', name: 'Stale', leagueTier: { id: 105000036 } }, // now L1 but history is old
+    ] },
+    // league histories (latest entry decides previous tier)
+    '/players/%23P1/leaguehistory': { items: [
+      { leagueSeasonId: 1779685200, leagueTierId: 105000035 },
+      { leagueSeasonId: 1780290000, leagueTierId: 105000035 }, // last completed: L2 -> now L1 = promoted
+    ] },
+    '/players/%23P2/leaguehistory': { items: [
+      { leagueSeasonId: 1780290000, leagueTierId: 105000036 }, // last completed: L1 -> now L2 = demoted
+    ] },
+    '/players/%23P5/leaguehistory': { items: [
+      { leagueSeasonId: 1779685200, leagueTierId: 105000035 }, // older season -> stale, skipped
     ] },
   });
-  const snap = await buildCurrentSnapshot(['#C1', '#C2'], 'key', {
-    fetchImpl, now: () => new Date('2026-06-01T07:00:00Z'),
-  });
-  assert.equal(snap.takenAt, '2026-06-01T07:00:00.000Z');
-  assert.deepEqual(snap.players, {
-    '#P1': { name: 'Alice', tier: 'I' },
-    '#M': { name: 'TW Mootje', tier: 'I' },
-    '#P3': { name: 'Carol', tier: 'II' },
-  });
+
+  const { season, promotions, demotions } = await detectMovements(['#C1', '#C2'], 'key', { fetchImpl });
+  assert.equal(season, 1780290000);
+  assert.deepEqual(promotions, [{ tag: '#P1', name: 'Alice' }]);
+  assert.deepEqual(demotions, [{ tag: '#P2', name: 'Bob' }]);
 });
