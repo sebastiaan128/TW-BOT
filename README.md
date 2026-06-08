@@ -9,8 +9,11 @@ gepromoveerd (felicitatie-graphic) of gedegradeerd (poep/clown-graphic).
 2. Maak `.env` op basis van `.env.example`:
    - `COC_API_KEY` — van https://developer.clashofclans.com/ (IP-locked op de
      cron-host; gebruik het publieke IP van die machine bij het aanmaken).
-   - `DISCORD_WEBHOOK_URL` — webhook van het doelkanaal.
-3. Vul in `config.json` de echte `clanTags` in (de TW-clans).
+   - `DISCORD_BOT_TOKEN` — bot-token. De bot post de banner én zet de reactie.
+     De bot moet in de server zitten met **View Channel + Send Messages +
+     Attach Files + Add Reactions** in het doelkanaal.
+3. Vul in `config.json` de echte `clanTags` in (de TW-clans) en de `channelId`
+   van het doelkanaal.
 4. Verifieer het tier-veld tegen de live API:
    `npm run probe -- "#JOUWCLANTAG"`
 5. Tune de tekstpositie: `npm run dry-run` en bekijk `out/`.

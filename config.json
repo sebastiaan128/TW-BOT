@@ -1,9 +1,10 @@
 {
   "clanTags": ["#2LU2U00QJ", "#2JPVV99RP", "#9JQGJJUL", "#P8PGVJJQ", "#2GYPYLJ00", "#2C8JLYRJC", "#9UVV2URP", "#L2VGL9YG", "#2RJGQQURV"],
+  "channelId": "1513470511126937731",
   "snapshotPath": "data/last-snapshot.json",
   "outDir": "out",
   "messages": {
-    "promoted": "🎉 Gefeliciteerd met je promotie naar Legend 1!",
+    "promoted": "",
     "demoted": ""
   },
   "reactions": {

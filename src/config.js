@@ -4,13 +4,14 @@ import { readFileSync } from 'node:fs';
 export function loadConfig(path = 'config.json') {
   const file = JSON.parse(readFileSync(path, 'utf8'));
   const cocApiKey = process.env.COC_API_KEY;
-  const webhookUrl = process.env.DISCORD_WEBHOOK_URL;
+  const botToken = process.env.DISCORD_BOT_TOKEN;
   if (!cocApiKey) throw new Error('COC_API_KEY env var is required');
-  if (!webhookUrl) throw new Error('DISCORD_WEBHOOK_URL env var is required');
+  if (!botToken) throw new Error('DISCORD_BOT_TOKEN env var is required');
+  if (!file.channelId) throw new Error('channelId is required in config.json');
   return {
     cocApiKey,
-    webhookUrl,
-    botToken: process.env.DISCORD_BOT_TOKEN, // optional: enables emoji reactions
+    botToken,
+    channelId: file.channelId,
     clanTags: file.clanTags ?? [],
     render: file.render ?? {},
     messages: file.messages ?? {},

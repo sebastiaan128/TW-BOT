@@ -7,7 +7,7 @@ function makeDeps(overrides = {}) {
   const calls = { writes: 0, posts: [], renders: [], reactions: [] };
   const deps = {
     loadConfig: () => ({
-      cocApiKey: 'k', webhookUrl: 'https://hook', botToken: 'tok', clanTags: ['#C'],
+      cocApiKey: 'k', botToken: 'tok', channelId: '42', clanTags: ['#C'],
       render: {}, messages: { promoted: 'gz', demoted: '' },
       reactions: { promoted: '🔥', demoted: '🤡' },
       snapshotPath: 'data/s.json', outDir: 'out',
@@ -20,7 +20,7 @@ function makeDeps(overrides = {}) {
     } }),
     writeSnapshot: async () => { calls.writes++; },
     renderUsername: async (type, name) => { calls.renders.push([type, name]); return Buffer.from([1]); },
-    postGraphic: async (_url, { filename }) => { calls.posts.push(filename); return { id: 'm', channel_id: 'c' }; },
+    postGraphic: async (_channelId, { filename }, _botToken) => { calls.posts.push(filename); return { id: 'm', channel_id: 'c' }; },
     addReaction: async (_chan, _msg, emoji) => { calls.reactions.push(emoji); },
     saveLocal: async () => {},
     ...overrides,
@@ -43,17 +43,17 @@ test('adds 🔥 for promotion and 🤡 for demotion as reactions', async () => {
   assert.deepEqual(calls.reactions, ['🔥', '🤡']);
 });
 
-test('no reactions when bot token is absent', async () => {
+test('no reaction is attempted when the type has no configured emoji', async () => {
   const { deps, calls } = makeDeps({
     loadConfig: () => ({
-      cocApiKey: 'k', webhookUrl: 'https://hook', clanTags: ['#C'],
+      cocApiKey: 'k', botToken: 'tok', channelId: '42', clanTags: ['#C'],
       render: {}, messages: { promoted: 'gz', demoted: '' },
-      reactions: { promoted: '🔥', demoted: '🤡' },
+      reactions: { promoted: '🔥' }, // no demoted emoji
       snapshotPath: 'data/s.json', outDir: 'out',
     }),
   });
   await run({}, deps);
-  assert.equal(calls.reactions.length, 0);
+  assert.deepEqual(calls.reactions, ['🔥']); // only the promotion reacts
   assert.equal(calls.posts.length, 2);
 });
 

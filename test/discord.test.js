@@ -3,31 +3,32 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { postGraphic, addReaction } from '../src/discord.js';
 
-test('postGraphic posts multipart form, requests ?wait=true, returns the message', async () => {
+test('postGraphic uploads an image to the channel via the bot and returns the message', async () => {
   let seen = {};
   const fetchImpl = async (url, opts) => {
     seen = { url, opts };
-    return { ok: true, status: 200, json: async () => ({ id: '999', channel_id: '42' }) };
+    return { ok: true, status: 200, json: async () => ({ id: '999', channel_id: '1513470511126937731' }) };
   };
-  const msg = await postGraphic('https://hook', {
+  const msg = await postGraphic('1513470511126937731', {
     filename: 'promoted-P1.png',
     imageBuffer: Buffer.from([1, 2, 3]),
     content: 'gefeliciteerd',
-  }, { fetchImpl });
+  }, 'tok', { fetchImpl });
 
-  assert.equal(seen.url, 'https://hook?wait=true');
+  assert.equal(seen.url, 'https://discord.com/api/v10/channels/1513470511126937731/messages');
   assert.equal(seen.opts.method, 'POST');
+  assert.equal(seen.opts.headers.Authorization, 'Bot tok');
   assert.ok(seen.opts.body instanceof FormData);
-  assert.equal(seen.opts.body.get('content'), 'gefeliciteerd');
+  assert.equal(JSON.parse(seen.opts.body.get('payload_json')).content, 'gefeliciteerd');
   assert.ok(seen.opts.body.get('files[0]'));
-  assert.deepEqual(msg, { id: '999', channel_id: '42' });
+  assert.deepEqual(msg, { id: '999', channel_id: '1513470511126937731' });
 });
 
 test('postGraphic throws on non-ok response', async () => {
-  const fetchImpl = async () => ({ ok: false, status: 400, text: async () => 'bad' });
+  const fetchImpl = async () => ({ ok: false, status: 403, text: async () => 'forbidden' });
   await assert.rejects(
-    () => postGraphic('https://hook', { filename: 'x.png', imageBuffer: Buffer.from([1]) }, { fetchImpl }),
-    /400/
+    () => postGraphic('42', { filename: 'x.png', imageBuffer: Buffer.from([1]) }, 'tok', { fetchImpl }),
+    /403/
   );
 });
 
