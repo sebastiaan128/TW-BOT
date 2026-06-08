@@ -63,3 +63,18 @@ test('renderUsername does not upscale when asset is narrower than outputWidth', 
   assert.equal(pngHeight(buf), 200);
   rmSync(DIR, { recursive: true, force: true });
 });
+
+test('renderUsername registers a fonts[] fallback list and renders symbols', async () => {
+  setup();
+  const fontsCfg = { promoted: {
+    ...cfg.promoted,
+    fonts: [
+      { path: 'assets/fonts/NotoSans-Bold.ttf', family: 'Noto Sans' },
+      { path: 'assets/fonts/NotoSansSymbols2-Regular.ttf', family: 'Noto Sans Symbols 2' },
+    ],
+    fontFamily: 'Noto Sans, Noto Sans Symbols 2, sans-serif',
+  } };
+  const buf = await renderUsername('promoted', 'TW ✰Toppertje', fontsCfg);
+  assert.ok(buf.subarray(0, 4).equals(PNG_SIG));
+  rmSync(DIR, { recursive: true, force: true });
+});
