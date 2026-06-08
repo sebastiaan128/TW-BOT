@@ -12,11 +12,12 @@ function withTmpConfig(obj, fn) {
 
 test('loadConfig merges file + env secrets', () => {
   process.env.COC_API_KEY = 'key123';
-  process.env.DISCORD_WEBHOOK_URL = 'https://hook';
-  withTmpConfig({ clanTags: ['#ABC'], render: { promoted: {} } }, () => {
+  process.env.DISCORD_BOT_TOKEN = 'bot123';
+  withTmpConfig({ clanTags: ['#ABC'], channelId: '42', render: { promoted: {} } }, () => {
     const cfg = loadConfig(TMP);
     assert.equal(cfg.cocApiKey, 'key123');
-    assert.equal(cfg.webhookUrl, 'https://hook');
+    assert.equal(cfg.botToken, 'bot123');
+    assert.equal(cfg.channelId, '42');
     assert.deepEqual(cfg.clanTags, ['#ABC']);
     assert.equal(cfg.snapshotPath, 'data/last-snapshot.json');
     assert.equal(cfg.outDir, 'out');
@@ -25,8 +26,24 @@ test('loadConfig merges file + env secrets', () => {
 
 test('loadConfig throws when COC_API_KEY missing', () => {
   delete process.env.COC_API_KEY;
-  process.env.DISCORD_WEBHOOK_URL = 'https://hook';
-  withTmpConfig({ clanTags: [] }, () => {
+  process.env.DISCORD_BOT_TOKEN = 'bot123';
+  withTmpConfig({ clanTags: [], channelId: '42' }, () => {
     assert.throws(() => loadConfig(TMP), /COC_API_KEY/);
+  });
+});
+
+test('loadConfig throws when DISCORD_BOT_TOKEN missing', () => {
+  process.env.COC_API_KEY = 'key123';
+  delete process.env.DISCORD_BOT_TOKEN;
+  withTmpConfig({ clanTags: [], channelId: '42' }, () => {
+    assert.throws(() => loadConfig(TMP), /DISCORD_BOT_TOKEN/);
+  });
+});
+
+test('loadConfig throws when channelId missing', () => {
+  process.env.COC_API_KEY = 'key123';
+  process.env.DISCORD_BOT_TOKEN = 'bot123';
+  withTmpConfig({ clanTags: [] }, () => {
+    assert.throws(() => loadConfig(TMP), /channelId/);
   });
 });

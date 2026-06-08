@@ -47,11 +47,11 @@ export async function run(options = {}, deps = defaultDeps) {
       await d.saveLocal(config.outDir, filename, buffer);
     } else {
       const content = config.messages?.[job.type] ?? '';
-      const message = await d.postGraphic(config.webhookUrl, { filename, imageBuffer: buffer, content });
-      // Best-effort emoji reaction under the post (needs a bot token). Never let
-      // a reaction failure abort the run or block the snapshot write.
+      const message = await d.postGraphic(config.channelId, { filename, imageBuffer: buffer, content }, config.botToken);
+      // Best-effort emoji reaction under the post. Never let a reaction failure
+      // abort the run or block the snapshot write.
       const emoji = config.reactions?.[job.type];
-      if (config.botToken && emoji && message?.id && message?.channel_id) {
+      if (emoji && message?.id && message?.channel_id) {
         try {
           await d.addReaction(message.channel_id, message.id, emoji, config.botToken);
         } catch (e) {
