@@ -1,6 +1,6 @@
 // scripts/probe-tier.js
 import { loadConfig } from '../src/config.js';
-import { fetchClanMembers, fetchPlayer, getTier, isInLegendLeague } from '../src/coc.js';
+import { fetchClanMembers, getTier } from '../src/coc.js';
 
 const config = loadConfig();
 const clanTag = process.argv[2] || config.clanTags[0];
@@ -9,12 +9,10 @@ if (!clanTag || clanTag.includes('REPLACE')) {
   process.exit(1);
 }
 
+// The tier lives on each member's `leagueTier` in the members list itself.
 const members = await fetchClanMembers(clanTag, config.cocApiKey);
-const legend = members.filter(isInLegendLeague);
-console.log(`Clan ${clanTag}: ${members.length} leden, ${legend.length} in Legend League\n`);
-
-// The tier lives on the player profile (leagueTier), not on the members list.
-for (const m of legend) {
-  const profile = await fetchPlayer(m.tag, config.cocApiKey);
-  console.log(`${m.name.padEnd(20)} leagueTier=${JSON.stringify(profile.leagueTier)}  -> getTier=${getTier(profile)}`);
+const withTier = members.filter((m) => m.leagueTier);
+console.log(`Clan ${clanTag}: ${members.length} leden, ${withTier.length} met een leagueTier\n`);
+for (const m of withTier) {
+  console.log(`${m.name.padEnd(20)} leagueTier.id=${m.leagueTier.id}  trophies=${m.trophies}  -> getTier=${getTier(m) ?? '-'}`);
 }
