@@ -3,19 +3,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { getTier } from '../src/coc.js';
 
-test('getTier reads Legend tiers from league name', () => {
-  assert.equal(getTier({ league: { name: 'Legend League I' } }), 'I');
-  assert.equal(getTier({ league: { name: 'Legend League II' } }), 'II');
-  assert.equal(getTier({ league: { name: 'Legend League III' } }), 'III');
-});
-
-test('getTier handles digit form', () => {
-  assert.equal(getTier({ league: { name: 'Legend League 1' } }), 'I');
-  assert.equal(getTier({ league: { name: 'Legend League 2' } }), 'II');
+test('getTier maps Legend League ids to tiers (36=L1 highest, 35=L2)', () => {
+  assert.equal(getTier({ league: { id: 105000036, name: 'Legend League' } }), 'I');
+  assert.equal(getTier({ league: { id: 105000035, name: 'Legend League' } }), 'II');
+  assert.equal(getTier({ league: { id: 105000034, name: 'Legend League' } }), 'III');
 });
 
 test('getTier returns null for non-legend or missing league', () => {
-  assert.equal(getTier({ league: { name: 'Titan League I' } }), null);
+  assert.equal(getTier({ league: { id: 29000022, name: 'Titan League I' } }), null);
   assert.equal(getTier({}), null);
   assert.equal(getTier({ league: null }), null);
 });
@@ -47,11 +42,11 @@ test('fetchClanMembers throws on non-ok response', async () => {
 test('buildCurrentSnapshot keeps only legend members keyed by tag', async () => {
   const fetchImpl = fakeFetch({
     '%23C1/members': { items: [
-      { tag: '#P1', name: 'Alice', league: { name: 'Legend League I' } },
-      { tag: '#P2', name: 'Bob', league: { name: 'Titan League I' } },
+      { tag: '#P1', name: 'Alice', league: { id: 105000036 } }, // Legend 1 -> I
+      { tag: '#P2', name: 'Bob', league: { id: 29000022 } },    // not a Legend tier -> ignored
     ] },
     '%23C2/members': { items: [
-      { tag: '#P3', name: 'Carol', league: { name: 'Legend League II' } },
+      { tag: '#P3', name: 'Carol', league: { id: 105000035 } }, // Legend 2 -> II
     ] },
   });
   const snap = await buildCurrentSnapshot(['#C1', '#C2'], 'key', {

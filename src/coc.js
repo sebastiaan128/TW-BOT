@@ -2,14 +2,20 @@
 import { withRetry } from './util.js';
 
 const API_BASE = 'https://api.clashofclans.com/v1';
-const TIER_BY_TOKEN = { I: 'I', '1': 'I', II: 'II', '2': 'II', III: 'III', '3': 'III' };
+
+// The CoC API distinguishes the Legend League tiers by league id (NOT by name).
+// Confirmed by the user: 105000036 = Legend 1 (highest), 105000035 = Legend 2.
+// 105000034 = Legend 3 is the expected next id in the sequence — confirm via the
+// probe; it does not affect posting since we only act on I<->II transitions.
+const TIER_BY_LEAGUE_ID = {
+  105000036: 'I',   // Legend 1 (highest)
+  105000035: 'II',  // Legend 2
+  105000034: 'III', // Legend 3 (assumed — verify with `npm run probe`)
+};
 
 export function getTier(member) {
-  const name = member?.league?.name;
-  if (!name) return null;
-  const m = name.match(/legend\s*league\s*(III|II|I|[123])/i);
-  if (!m) return null;
-  return TIER_BY_TOKEN[m[1].toUpperCase()] ?? null;
+  const id = member?.league?.id;
+  return TIER_BY_LEAGUE_ID[id] ?? null;
 }
 
 export async function fetchClanMembers(clanTag, apiKey, { fetchImpl = fetch } = {}) {
