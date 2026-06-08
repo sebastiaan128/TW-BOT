@@ -10,9 +10,11 @@ export function loadConfig(path = 'config.json') {
   return {
     cocApiKey,
     webhookUrl,
+    botToken: process.env.DISCORD_BOT_TOKEN, // optional: enables emoji reactions
     clanTags: file.clanTags ?? [],
     render: file.render ?? {},
     messages: file.messages ?? {},
+    reactions: file.reactions ?? {},
     snapshotPath: file.snapshotPath ?? 'data/last-snapshot.json',
     outDir: file.outDir ?? 'out',
   };

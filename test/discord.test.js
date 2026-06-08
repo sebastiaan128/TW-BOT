@@ -1,25 +1,26 @@
 // test/discord.test.js
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { postGraphic } from '../src/discord.js';
+import { postGraphic, addReaction } from '../src/discord.js';
 
-test('postGraphic posts multipart form to the webhook', async () => {
+test('postGraphic posts multipart form, requests ?wait=true, returns the message', async () => {
   let seen = {};
   const fetchImpl = async (url, opts) => {
     seen = { url, opts };
-    return { ok: true, status: 200, text: async () => '' };
+    return { ok: true, status: 200, json: async () => ({ id: '999', channel_id: '42' }) };
   };
-  await postGraphic('https://hook', {
+  const msg = await postGraphic('https://hook', {
     filename: 'promoted-P1.png',
     imageBuffer: Buffer.from([1, 2, 3]),
     content: 'gefeliciteerd',
   }, { fetchImpl });
 
-  assert.equal(seen.url, 'https://hook');
+  assert.equal(seen.url, 'https://hook?wait=true');
   assert.equal(seen.opts.method, 'POST');
   assert.ok(seen.opts.body instanceof FormData);
   assert.equal(seen.opts.body.get('content'), 'gefeliciteerd');
   assert.ok(seen.opts.body.get('files[0]'));
+  assert.deepEqual(msg, { id: '999', channel_id: '42' });
 });
 
 test('postGraphic throws on non-ok response', async () => {
@@ -28,4 +29,18 @@ test('postGraphic throws on non-ok response', async () => {
     () => postGraphic('https://hook', { filename: 'x.png', imageBuffer: Buffer.from([1]) }, { fetchImpl }),
     /400/
   );
+});
+
+test('addReaction PUTs an URL-encoded emoji with a bot token', async () => {
+  let seen = {};
+  const fetchImpl = async (url, opts) => { seen = { url, opts }; return { ok: true, status: 204 }; };
+  await addReaction('42', '999', '🔥', 'tok', { fetchImpl });
+  assert.equal(seen.url, 'https://discord.com/api/v10/channels/42/messages/999/reactions/%F0%9F%94%A5/@me');
+  assert.equal(seen.opts.method, 'PUT');
+  assert.equal(seen.opts.headers.Authorization, 'Bot tok');
+});
+
+test('addReaction throws on non-ok response', async () => {
+  const fetchImpl = async () => ({ ok: false, status: 403, text: async () => 'forbidden' });
+  await assert.rejects(() => addReaction('42', '999', '🤡', 'tok', { fetchImpl }), /403/);
 });

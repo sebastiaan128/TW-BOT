@@ -6,7 +6,7 @@ import { buildCurrentSnapshot } from './coc.js';
 import { readSnapshot, writeSnapshot } from './snapshot.js';
 import { diffSnapshots } from './diff.js';
 import { renderUsername } from './render.js';
-import { postGraphic } from './discord.js';
+import { postGraphic, addReaction } from './discord.js';
 
 async function saveLocal(dir, filename, buffer) {
   await mkdir(dir, { recursive: true });
@@ -15,7 +15,7 @@ async function saveLocal(dir, filename, buffer) {
 
 const defaultDeps = {
   loadConfig, buildCurrentSnapshot, readSnapshot, writeSnapshot,
-  diffSnapshots, renderUsername, postGraphic, saveLocal,
+  diffSnapshots, renderUsername, postGraphic, addReaction, saveLocal,
 };
 
 export async function run(options = {}, deps = defaultDeps) {
@@ -47,7 +47,17 @@ export async function run(options = {}, deps = defaultDeps) {
       await d.saveLocal(config.outDir, filename, buffer);
     } else {
       const content = config.messages?.[job.type] ?? '';
-      await d.postGraphic(config.webhookUrl, { filename, imageBuffer: buffer, content });
+      const message = await d.postGraphic(config.webhookUrl, { filename, imageBuffer: buffer, content });
+      // Best-effort emoji reaction under the post (needs a bot token). Never let
+      // a reaction failure abort the run or block the snapshot write.
+      const emoji = config.reactions?.[job.type];
+      if (config.botToken && emoji && message?.id && message?.channel_id) {
+        try {
+          await d.addReaction(message.channel_id, message.id, emoji, config.botToken);
+        } catch (e) {
+          console.warn(`Reaction failed for ${job.tag}: ${e.message}`);
+        }
+      }
     }
     posted.push(job);
   }
