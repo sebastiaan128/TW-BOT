@@ -4,11 +4,12 @@ import assert from 'node:assert/strict';
 import { run } from '../src/index.js';
 
 function makeDeps(overrides = {}) {
-  const calls = { writes: 0, posts: [], renders: [] };
+  const calls = { writes: 0, posts: [], renders: [], reactions: [] };
   const deps = {
     loadConfig: () => ({
-      cocApiKey: 'k', webhookUrl: 'https://hook', clanTags: ['#C'],
+      cocApiKey: 'k', webhookUrl: 'https://hook', botToken: 'tok', clanTags: ['#C'],
       render: {}, messages: { promoted: 'gz', demoted: '' },
+      reactions: { promoted: '🔥', demoted: '🤡' },
       snapshotPath: 'data/s.json', outDir: 'out',
     }),
     buildCurrentSnapshot: async () => ({ takenAt: 't', players: {
@@ -19,7 +20,8 @@ function makeDeps(overrides = {}) {
     } }),
     writeSnapshot: async () => { calls.writes++; },
     renderUsername: async (type, name) => { calls.renders.push([type, name]); return Buffer.from([1]); },
-    postGraphic: async (_url, { filename }) => { calls.posts.push(filename); },
+    postGraphic: async (_url, { filename }) => { calls.posts.push(filename); return { id: 'm', channel_id: 'c' }; },
+    addReaction: async (_chan, _msg, emoji) => { calls.reactions.push(emoji); },
     saveLocal: async () => {},
     ...overrides,
   };
@@ -32,6 +34,33 @@ test('run posts one graphic per transition and writes snapshot', async () => {
   assert.equal(result.firstRun, false);
   assert.deepEqual(calls.renders, [['promoted', 'Alice'], ['demoted', 'Bob']]);
   assert.equal(calls.posts.length, 2);
+  assert.equal(calls.writes, 1);
+});
+
+test('adds 🔥 for promotion and 🤡 for demotion as reactions', async () => {
+  const { deps, calls } = makeDeps();
+  await run({}, deps);
+  assert.deepEqual(calls.reactions, ['🔥', '🤡']);
+});
+
+test('no reactions when bot token is absent', async () => {
+  const { deps, calls } = makeDeps({
+    loadConfig: () => ({
+      cocApiKey: 'k', webhookUrl: 'https://hook', clanTags: ['#C'],
+      render: {}, messages: { promoted: 'gz', demoted: '' },
+      reactions: { promoted: '🔥', demoted: '🤡' },
+      snapshotPath: 'data/s.json', outDir: 'out',
+    }),
+  });
+  await run({}, deps);
+  assert.equal(calls.reactions.length, 0);
+  assert.equal(calls.posts.length, 2);
+});
+
+test('reaction failure does not abort the run or block the snapshot', async () => {
+  const { deps, calls } = makeDeps({ addReaction: async () => { throw new Error('no perms'); } });
+  const result = await run({}, deps);
+  assert.equal(result.posted.length, 2);
   assert.equal(calls.writes, 1);
 });
 

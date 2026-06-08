@@ -6,6 +6,10 @@
     "promoted": "🎉 Gefeliciteerd met je promotie naar Legend 1!",
     "demoted": ""
   },
+  "reactions": {
+    "promoted": "🔥",
+    "demoted": "🤡"
+  },
   "render": {
     "promoted": {
       "assetPath": "assets/Promoted.png",
