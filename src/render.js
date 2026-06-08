@@ -6,7 +6,16 @@ export async function renderUsername(type, username, renderConfig) {
   const cfg = renderConfig[type];
   if (!cfg) throw new Error(`Unknown render type: ${type}`);
 
-  if (cfg.fontPath && existsSync(cfg.fontPath)) {
+  // Register one or more fonts. `fonts` is a list of { path, family } so a
+  // primary text font can be paired with a symbol font; `fontFamily` is then a
+  // CSS-style fallback list (e.g. "Noto Sans, Noto Sans Symbols 2, sans-serif")
+  // and Skia falls back per-glyph through it. A single `fontPath` is still
+  // supported for the simple case.
+  if (Array.isArray(cfg.fonts)) {
+    for (const f of cfg.fonts) {
+      if (f.path && existsSync(f.path)) GlobalFonts.registerFromPath(f.path, f.family);
+    }
+  } else if (cfg.fontPath && existsSync(cfg.fontPath)) {
     GlobalFonts.registerFromPath(cfg.fontPath, cfg.fontFamily);
   }
 
