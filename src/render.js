@@ -28,5 +28,16 @@ export async function renderUsername(type, username, renderConfig) {
   }
 
   ctx.fillText(username, cfg.x, cfg.y);
+
+  // Downscale for Discord: full-res assets (~5504px) exceed the webhook upload
+  // limit. Render text at full res for crisp antialiasing, then scale the
+  // composed image down to outputWidth before encoding.
+  const outputWidth = cfg.outputWidth ?? 1600;
+  if (img.width > outputWidth) {
+    const scale = outputWidth / img.width;
+    const out = createCanvas(Math.round(img.width * scale), Math.round(img.height * scale));
+    out.getContext('2d').drawImage(canvas, 0, 0, out.width, out.height);
+    return out.toBuffer('image/png');
+  }
   return canvas.toBuffer('image/png');
 }

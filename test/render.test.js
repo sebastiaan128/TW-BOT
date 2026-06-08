@@ -42,3 +42,24 @@ test('renderUsername throws on unknown type', async () => {
   await assert.rejects(() => renderUsername('bogus', 'X', cfg), /Unknown render type/);
   rmSync(DIR, { recursive: true, force: true });
 });
+
+// A PNG stores width/height as big-endian uint32 at byte offsets 16 and 20.
+function pngWidth(buf) { return buf.readUInt32BE(16); }
+function pngHeight(buf) { return buf.readUInt32BE(20); }
+
+test('renderUsername downscales output to outputWidth, preserving aspect ratio', async () => {
+  setup();
+  const scaledCfg = { promoted: { ...cfg.promoted, outputWidth: 200 } };
+  const buf = await renderUsername('promoted', 'X', scaledCfg);
+  assert.equal(pngWidth(buf), 200);   // 400 -> 200
+  assert.equal(pngHeight(buf), 100);  // 200 -> 100 (aspect preserved)
+  rmSync(DIR, { recursive: true, force: true });
+});
+
+test('renderUsername does not upscale when asset is narrower than outputWidth', async () => {
+  setup();
+  const buf = await renderUsername('promoted', 'X', cfg); // 400px asset, default outputWidth 1600
+  assert.equal(pngWidth(buf), 400);
+  assert.equal(pngHeight(buf), 200);
+  rmSync(DIR, { recursive: true, force: true });
+});
