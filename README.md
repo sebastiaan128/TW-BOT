@@ -28,7 +28,7 @@ Open `crontab -e` op de host en voeg toe (voorbeeld 09:00):
 
 ```cron
 CRON_TZ=Europe/Amsterdam
-0 9 * * 1 cd /pad/naar/TW-BOT && /usr/bin/node --env-file=.env src/index.js >> data/run.log 2>&1
+0 9 * * 1 cd /pad/naar/TW-BOT && mkdir -p data && /usr/bin/node --env-file=.env src/index.js >> data/run.log 2>&1
 ```
 
 - `* * 1` = elke maandag. Pas `0 9` aan voor een ander tijdstip.
