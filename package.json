@@ -1,0 +1,15 @@
+{
+  "name": "tw-bot",
+  "version": "1.0.0",
+  "type": "module",
+  "engines": { "node": ">=20.6" },
+  "scripts": {
+    "test": "node --test",
+    "start": "node --env-file=.env src/index.js",
+    "dry-run": "node --env-file=.env src/index.js --dry-run",
+    "probe": "node --env-file=.env scripts/probe-tier.js"
+  },
+  "dependencies": {
+    "@napi-rs/canvas": "^0.1.65"
+  }
+}
