@@ -56,6 +56,51 @@ test('fetchLeagueHistory hits the leaguehistory endpoint and returns items', asy
   assert.equal(items[0].leagueTierId, 105000036);
 });
 
+// test/coc.test.js — toevoegen onderaan
+import { fetchBattleLog, oneStarAttacks, legendOnePlayers } from '../src/coc.js';
+
+test('oneStarAttacks keeps only ranked attacks with exactly 1 star', () => {
+  const items = [
+    { battleType: 'ranked', attack: true, stars: 1, opponentPlayerTag: '#O1', destructionPercentage: 79 },
+    { battleType: 'ranked', attack: true, stars: 2, opponentPlayerTag: '#O2', destructionPercentage: 91 },
+    { battleType: 'ranked', attack: false, stars: 1, opponentPlayerTag: '#O3', destructionPercentage: 100 }, // defense
+    { battleType: 'homeVillage', attack: true, stars: 1, opponentPlayerTag: '#O4', destructionPercentage: 50 }, // farm
+  ];
+  assert.deepEqual(oneStarAttacks(items), [
+    { opponentPlayerTag: '#O1', destructionPercentage: 79 },
+  ]);
+  assert.deepEqual(oneStarAttacks(null), []);
+});
+
+test('fetchBattleLog hits the battlelog endpoint and returns items', async () => {
+  let seenUrl;
+  const fetchImpl = async (url) => { seenUrl = url; return { ok: true, status: 200, json: async () => ({ items: [{ stars: 1 }] }) }; };
+  const items = await fetchBattleLog('#P1', 'key', { fetchImpl });
+  assert.match(seenUrl, /\/players\/%23P1\/battlelog$/);
+  assert.deepEqual(items, [{ stars: 1 }]);
+});
+
+test('fetchBattleLog throws on non-ok response', async () => {
+  const fetchImpl = async () => ({ ok: false, status: 404, json: async () => ({}) });
+  await assert.rejects(() => fetchBattleLog('#P1', 'key', { fetchImpl }), /404/);
+});
+
+test('legendOnePlayers returns only tier-I members across clans', async () => {
+  const fetchImpl = async (url) => {
+    if (url.includes('%23C1/members')) return { ok: true, status: 200, json: async () => ({ items: [
+      { tag: '#A', name: 'Alice', leagueTier: { id: 105000036 } }, // L1
+      { tag: '#B', name: 'Bob', leagueTier: { id: 105000035 } },   // L2 -> excluded
+    ] }) };
+    if (url.includes('%23C2/members')) return { ok: true, status: 200, json: async () => ({ items: [
+      { tag: '#C', name: 'Carol', leagueTier: { id: 105000036 } }, // L1
+      { tag: '#D', name: 'Dave', league: { id: 29000000 } },       // unranked -> excluded
+    ] }) };
+    return { ok: false, status: 404, json: async () => ({}) };
+  };
+  const players = await legendOnePlayers(['#C1', '#C2'], 'key', { fetchImpl });
+  assert.deepEqual(players, [{ tag: '#A', name: 'Alice' }, { tag: '#C', name: 'Carol' }]);
+});
+
 test('detectMovements finds L2->L1 / L1->L2 at the latest reset and skips stale histories', async () => {
   const fetchImpl = fakeFetch({
     // current members across two clans

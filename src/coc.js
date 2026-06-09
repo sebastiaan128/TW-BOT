@@ -87,3 +87,33 @@ export async function detectMovements(clanTags, apiKey, { fetchImpl = fetch } = 
 
   return { season, promotions, demotions };
 }
+
+// Per-player battle log (recent ~50 battles). No timestamp/id per battle.
+export async function fetchBattleLog(playerTag, apiKey, { fetchImpl = fetch } = {}) {
+  const encoded = encodeURIComponent(playerTag);
+  const res = await fetchImpl(`${API_BASE}/players/${encoded}/battlelog`, {
+    headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
+  });
+  if (!res.ok) throw new Error(`CoC API ${res.status} for battlelog ${playerTag}`);
+  const data = await res.json();
+  return data.items ?? [];
+}
+
+// 1-star Legend attacks = ranked battle, this player attacking, exactly 1 star.
+export function oneStarAttacks(items) {
+  return (items ?? [])
+    .filter((b) => b.battleType === 'ranked' && b.attack === true && b.stars === 1)
+    .map((b) => ({ opponentPlayerTag: b.opponentPlayerTag, destructionPercentage: b.destructionPercentage }));
+}
+
+// Members currently in Legend 1 (tier I) across the given clans.
+export async function legendOnePlayers(clanTags, apiKey, { fetchImpl = fetch } = {}) {
+  const players = [];
+  for (const tag of clanTags) {
+    const members = await withRetry(() => fetchClanMembers(tag, apiKey, { fetchImpl }));
+    for (const m of members) {
+      if (getTier(m) === 'I') players.push({ tag: m.tag, name: m.name });
+    }
+  }
+  return players;
+}
