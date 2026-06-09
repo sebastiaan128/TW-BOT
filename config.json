@@ -48,8 +48,7 @@
         { "path": "assets/fonts/NotoSansSymbols2-Regular.ttf", "family": "Noto Sans Symbols 2" }
       ],
       "fields": [
-        { "key": "name", "x": 4220, "y": 2520, "maxWidth": 1550, "color": "#5a3a1a", "baseFontSize": 180 },
-        { "key": "destruction", "x": 4220, "y": 2150, "maxWidth": 1200, "color": "#ffffff", "baseFontSize": 150 }
+        { "key": "name", "x": 4220, "y": 2520, "maxWidth": 1550, "color": "#5a3a1a", "baseFontSize": 180 }
       ]
     }
   }
