@@ -32,3 +32,19 @@ export async function addReaction(channelId, messageId, emoji, botToken, { fetch
   }
   return res;
 }
+
+// Resolves a guild custom-emoji id by name (case-insensitive). Returns null if
+// not found. Used to react with a custom emoji, which the API expects as
+// "name:id". Survives re-uploads of the emoji (id looked up fresh each run).
+export async function fetchEmojiId(guildId, name, botToken, { fetchImpl = fetch } = {}) {
+  const res = await fetchImpl(`${DISCORD_API}/guilds/${guildId}/emojis`, {
+    headers: { Authorization: `Bot ${botToken}` },
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`Discord emojis fetch failed: ${res.status} ${body}`);
+  }
+  const emojis = await res.json();
+  const hit = emojis.find((e) => e.name?.toLowerCase() === name.toLowerCase());
+  return hit?.id ?? null;
+}

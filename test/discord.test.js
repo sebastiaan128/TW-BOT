@@ -45,3 +45,31 @@ test('addReaction throws on non-ok response', async () => {
   const fetchImpl = async () => ({ ok: false, status: 403, text: async () => 'forbidden' });
   await assert.rejects(() => addReaction('42', '999', '🤡', 'tok', { fetchImpl }), /403/);
 });
+
+// test/discord.test.js — toevoegen onderaan
+import { fetchEmojiId } from '../src/discord.js';
+
+test('fetchEmojiId returns the id of a custom emoji matched by name (case-insensitive)', async () => {
+  let seen = {};
+  const fetchImpl = async (url, opts) => {
+    seen = { url, opts };
+    return { ok: true, status: 200, json: async () => ([
+      { name: 'wave', id: '111' },
+      { name: 'LaugingPepe', id: '222' },
+    ]) };
+  };
+  const id = await fetchEmojiId('GUILD', 'laugingpepe', 'tok', { fetchImpl });
+  assert.equal(seen.url, 'https://discord.com/api/v10/guilds/GUILD/emojis');
+  assert.equal(seen.opts.headers.Authorization, 'Bot tok');
+  assert.equal(id, '222');
+});
+
+test('fetchEmojiId returns null when no emoji matches', async () => {
+  const fetchImpl = async () => ({ ok: true, status: 200, json: async () => ([{ name: 'wave', id: '111' }]) });
+  assert.equal(await fetchEmojiId('GUILD', 'LaugingPepe', 'tok', { fetchImpl }), null);
+});
+
+test('fetchEmojiId throws on non-ok response', async () => {
+  const fetchImpl = async () => ({ ok: false, status: 403, text: async () => 'forbidden' });
+  await assert.rejects(() => fetchEmojiId('GUILD', 'x', 'tok', { fetchImpl }), /403/);
+});
