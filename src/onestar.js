@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { loadConfig } from './config.js';
 import { legendOnePlayers, fetchBattleLog, oneStarAttacks } from './coc.js';
+import { withRetry } from './util.js';
 import { readSnapshot, writeSnapshot } from './snapshot.js';
 import { renderFields } from './render.js';
 import { postGraphic, addReaction, fetchEmojiId } from './discord.js';
@@ -44,7 +45,7 @@ export async function run(options = {}, deps = defaultDeps) {
   for (const p of players) {
     let items;
     try {
-      items = await d.fetchBattleLog(p.tag, config.cocApiKey);
+      items = await withRetry(() => d.fetchBattleLog(p.tag, config.cocApiKey), { retries: 2, baseDelayMs: 300 });
     } catch (e) {
       console.warn(`Battlelog failed for ${p.tag}: ${e.message}`); // leave state untouched
       continue;
