@@ -78,3 +78,38 @@ test('renderUsername registers a fonts[] fallback list and renders symbols', asy
   assert.ok(buf.subarray(0, 4).equals(PNG_SIG));
   rmSync(DIR, { recursive: true, force: true });
 });
+
+// test/render.test.js — toevoegen onderaan
+import { renderFields } from '../src/render.js';
+
+const fieldsCfg = {
+  onestar: {
+    assetPath: ASSET, // hergebruikt de fixture-PNG uit setup()
+    fields: [
+      { key: 'name', x: 200, y: 80, maxWidth: 380, color: '#ffffff', baseFontSize: 40 },
+      { key: 'destruction', x: 200, y: 140, maxWidth: 380, color: '#ffd700', baseFontSize: 30 },
+    ],
+    fontFamily: 'sans-serif', fontWeight: 'bold',
+  },
+};
+
+test('renderFields draws multiple fields and returns a PNG buffer', async () => {
+  setup();
+  const buf = await renderFields('onestar', { name: 'TW Mootje', destruction: '79%' }, fieldsCfg);
+  assert.ok(Buffer.isBuffer(buf));
+  assert.ok(buf.subarray(0, 4).equals(PNG_SIG));
+  rmSync(DIR, { recursive: true, force: true });
+});
+
+test('renderFields auto-fits a long value without throwing', async () => {
+  setup();
+  const buf = await renderFields('onestar', { name: 'EenHeelErgLangeGebruikersnaamXYZ', destruction: '100%' }, fieldsCfg);
+  assert.ok(buf.subarray(0, 4).equals(PNG_SIG));
+  rmSync(DIR, { recursive: true, force: true });
+});
+
+test('renderFields throws on unknown type', async () => {
+  setup();
+  await assert.rejects(() => renderFields('bogus', {}, fieldsCfg), /Unknown render type/);
+  rmSync(DIR, { recursive: true, force: true });
+});

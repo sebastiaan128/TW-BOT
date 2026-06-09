@@ -2,15 +2,9 @@
 import { createCanvas, loadImage, GlobalFonts } from '@napi-rs/canvas';
 import { existsSync } from 'node:fs';
 
-export async function renderUsername(type, username, renderConfig) {
-  const cfg = renderConfig[type];
-  if (!cfg) throw new Error(`Unknown render type: ${type}`);
-
-  // Register one or more fonts. `fonts` is a list of { path, family } so a
-  // primary text font can be paired with a symbol font; `fontFamily` is then a
-  // CSS-style fallback list (e.g. "Noto Sans, Noto Sans Symbols 2, sans-serif")
-  // and Skia falls back per-glyph through it. A single `fontPath` is still
-  // supported for the simple case.
+// Register one or more fonts so Skia can fall back per-glyph. Supports a
+// `fonts` list of { path, family } or a single { fontPath, fontFamily }.
+function registerFonts(cfg) {
   if (Array.isArray(cfg.fonts)) {
     for (const f of cfg.fonts) {
       if (f.path && existsSync(f.path)) GlobalFonts.registerFromPath(f.path, f.family);
@@ -18,29 +12,21 @@ export async function renderUsername(type, username, renderConfig) {
   } else if (cfg.fontPath && existsSync(cfg.fontPath)) {
     GlobalFonts.registerFromPath(cfg.fontPath, cfg.fontFamily);
   }
+}
 
-  const img = await loadImage(cfg.assetPath);
-  const canvas = createCanvas(img.width, img.height);
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(img, 0, 0);
+// Draw `text` centered at (x,y), shrinking the font until it fits maxWidth.
+function drawAutoFit(ctx, text, { x, y, maxWidth, color, baseFontSize }, fontFamily, fontWeight) {
+  ctx.fillStyle = color;
+  let size = baseFontSize;
+  const setFont = (s) => { ctx.font = `${fontWeight ?? 'bold'} ${s}px ${fontFamily}`; };
+  setFont(size);
+  while (ctx.measureText(text).width > maxWidth && size > 10) { size -= 2; setFont(size); }
+  ctx.fillText(text, x, y);
+}
 
-  ctx.fillStyle = cfg.color;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-
-  let fontSize = cfg.baseFontSize;
-  const setFont = (s) => { ctx.font = `${cfg.fontWeight ?? 'bold'} ${s}px ${cfg.fontFamily}`; };
-  setFont(fontSize);
-  while (ctx.measureText(username).width > cfg.maxWidth && fontSize > 10) {
-    fontSize -= 2;
-    setFont(fontSize);
-  }
-
-  ctx.fillText(username, cfg.x, cfg.y);
-
-  // Downscale for Discord: full-res assets (~5504px) exceed the webhook upload
-  // limit. Render text at full res for crisp antialiasing, then scale the
-  // composed image down to outputWidth before encoding.
+// Full-res assets (~5504px) exceed the Discord upload limit. Render at full res
+// for crisp text, then scale the composed image down to outputWidth (def 1600).
+function finishCanvas(canvas, img, cfg) {
   const outputWidth = cfg.outputWidth ?? 1600;
   if (img.width > outputWidth) {
     const scale = outputWidth / img.width;
@@ -49,4 +35,45 @@ export async function renderUsername(type, username, renderConfig) {
     return out.toBuffer('image/png');
   }
   return canvas.toBuffer('image/png');
+}
+
+export async function renderUsername(type, username, renderConfig) {
+  const cfg = renderConfig[type];
+  if (!cfg) throw new Error(`Unknown render type: ${type}`);
+  registerFonts(cfg);
+
+  const img = await loadImage(cfg.assetPath);
+  const canvas = createCanvas(img.width, img.height);
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(img, 0, 0);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  drawAutoFit(ctx, username, {
+    x: cfg.x, y: cfg.y, maxWidth: cfg.maxWidth, color: cfg.color, baseFontSize: cfg.baseFontSize,
+  }, cfg.fontFamily, cfg.fontWeight);
+
+  return finishCanvas(canvas, img, cfg);
+}
+
+// Draws multiple labelled fields onto an asset. `values` maps field.key ->
+// string; `cfg.fields` is a list of { key, x, y, maxWidth, color, baseFontSize }.
+export async function renderFields(type, values, renderConfig) {
+  const cfg = renderConfig[type];
+  if (!cfg) throw new Error(`Unknown render type: ${type}`);
+  registerFonts(cfg);
+
+  const img = await loadImage(cfg.assetPath);
+  const canvas = createCanvas(img.width, img.height);
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(img, 0, 0);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  for (const field of cfg.fields ?? []) {
+    const text = String(values[field.key] ?? '');
+    drawAutoFit(ctx, text, field, cfg.fontFamily, cfg.fontWeight);
+  }
+
+  return finishCanvas(canvas, img, cfg);
 }
