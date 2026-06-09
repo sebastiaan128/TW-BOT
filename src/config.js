@@ -16,6 +16,7 @@ export function loadConfig(path = 'config.json') {
     render: file.render ?? {},
     messages: file.messages ?? {},
     reactions: file.reactions ?? {},
+    oneStar: file.oneStar ?? {},
     snapshotPath: file.snapshotPath ?? 'data/last-snapshot.json',
     outDir: file.outDir ?? 'out',
   };

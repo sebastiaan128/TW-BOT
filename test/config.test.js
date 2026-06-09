@@ -47,3 +47,15 @@ test('loadConfig throws when channelId missing', () => {
     assert.throws(() => loadConfig(TMP), /channelId/);
   });
 });
+
+// test/config.test.js — toevoegen onderaan
+test('loadConfig passes through the oneStar section (default {})', () => {
+  process.env.COC_API_KEY = 'key123';
+  process.env.DISCORD_BOT_TOKEN = 'bot123';
+  withTmpConfig({ clanTags: [], channelId: '42', oneStar: { channelId: '99', guildId: 'g', emojiName: 'LaugingPepe' } }, () => {
+    assert.deepEqual(loadConfig(TMP).oneStar, { channelId: '99', guildId: 'g', emojiName: 'LaugingPepe' });
+  });
+  withTmpConfig({ clanTags: [], channelId: '42' }, () => {
+    assert.deepEqual(loadConfig(TMP).oneStar, {});
+  });
+});

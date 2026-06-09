@@ -1,6 +1,12 @@
 {
   "clanTags": ["#2LU2U00QJ", "#2JPVV99RP", "#9JQGJJUL", "#P8PGVJJQ", "#2GYPYLJ00", "#2C8JLYRJC", "#9UVV2URP", "#L2VGL9YG", "#2RJGQQURV"],
   "channelId": "1513470511126937731",
+  "oneStar": {
+    "channelId": "1487801970474487962",
+    "guildId": "1487801969371250798",
+    "emojiName": "LaugingPepe",
+    "statePath": "data/onestar-seen.json"
+  },
   "snapshotPath": "data/last-snapshot.json",
   "outDir": "out",
   "messages": {
@@ -30,6 +36,20 @@
       "fonts": [
         { "path": "assets/fonts/NotoSans-Bold.ttf", "family": "Noto Sans" },
         { "path": "assets/fonts/NotoSansSymbols2-Regular.ttf", "family": "Noto Sans Symbols 2" }
+      ]
+    },
+    "onestar": {
+      "assetPath": "assets/OneStar.png",
+      "outputWidth": 1600,
+      "fontWeight": "bold",
+      "fontFamily": "Noto Sans, Noto Sans Symbols 2, sans-serif",
+      "fonts": [
+        { "path": "assets/fonts/NotoSans-Bold.ttf", "family": "Noto Sans" },
+        { "path": "assets/fonts/NotoSansSymbols2-Regular.ttf", "family": "Noto Sans Symbols 2" }
+      ],
+      "fields": [
+        { "key": "name", "x": 2750, "y": 2000, "maxWidth": 2400, "color": "#ffffff", "baseFontSize": 240 },
+        { "key": "destruction", "x": 2750, "y": 2420, "maxWidth": 2400, "color": "#ffd700", "baseFontSize": 200 }
       ]
     }
   }
