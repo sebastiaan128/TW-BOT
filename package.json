@@ -8,6 +8,9 @@
     "start": "node --env-file=.env src/index.js",
     "dry-run": "node --env-file=.env src/index.js --dry-run",
     "mark-seen": "node --env-file=.env src/index.js --mark-seen",
+    "onestar": "node --env-file=.env src/onestar.js",
+    "onestar:dry-run": "node --env-file=.env src/onestar.js --dry-run",
+    "onestar:mark-seen": "node --env-file=.env src/onestar.js --mark-seen",
     "probe": "node --env-file=.env scripts/probe-tier.js"
   },
   "dependencies": {

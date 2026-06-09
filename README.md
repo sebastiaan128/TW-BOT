@@ -57,3 +57,29 @@ CRON_TZ=Europe/Amsterdam
 - `* * 1` = elke maandag. Pas `0 9` aan voor een ander tijdstip.
 - Gebruik het absolute pad naar `node` (`which node`).
 - De host moet het IP hebben waarop de CoC API-key gewhitelist is.
+
+## Feature 2: Legend 1 — 1-ster "shame"
+
+Post elke ~15 minuten in het ducks-kanaal een graphic voor elke *nieuwe* 1-ster
+ranked aanval van een Legend-1 speler, met een `:LaugingPepe:` reactie eronder.
+
+- Databron: CoC `players/{tag}/battlelog` (per-aanval sterren; geen tijdstempel).
+- Detectie: ranked attack met `stars === 1` van spelers in Legend 1 (tier I).
+- Dedup: per speler een set signaturen (`tegenstander|%`) in
+  `data/onestar-seen.json`; elke aanval wordt één keer gepost.
+- Vereist in `config.json` de `oneStar`-sectie (channelId, guildId, emojiName)
+  en `render.onestar` (asset + tekstvelden). De `:LaugingPepe:` emoji moet in de
+  server (guild) staan zodat de bot ermee kan reageren.
+
+Commando's:
+
+- `npm run onestar` — detecteert en post nieuwe 1-ster aanvallen.
+- `npm run onestar:dry-run` — rendert naar `out/`, post niet, raakt state niet aan.
+- `npm run onestar:mark-seen` — markeert de huidige battlelog als gezien zonder te
+  posten (eenmalig bij deploy, voorkomt een flood van bestaande aanvallen).
+
+Cron (elke 15 minuten):
+
+```cron
+*/15 * * * * cd /pad/naar/TW-BOT && mkdir -p data && /usr/bin/node --env-file=.env src/onestar.js >> data/onestar.log 2>&1
+```
