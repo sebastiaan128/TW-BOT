@@ -11,53 +11,46 @@ function fakeTimers() {
   return { setIntervalFn, cbs };
 }
 
+// Base options that keep tests off the real filesystem/config.
+function base(overrides = {}) {
+  return {
+    runOneStarFn: async () => {},
+    runMovementsFn: async () => {},
+    isFreshInstall: () => false,
+    now: () => new Date('2026-06-09T08:00:00Z'), // Tuesday
+    setIntervalFn: fakeTimers().setIntervalFn,
+    log: silent,
+    ...overrides,
+  };
+}
+
 test('runs onestar once on boot', async () => {
   let onestar = 0;
-  const { setIntervalFn } = fakeTimers();
-  startDaemon({
-    runOneStarFn: async () => { onestar++; },
-    runMovementsFn: async () => {},
-    now: () => new Date('2026-06-09T08:00:00Z'), // Tuesday
-    setIntervalFn, log: silent,
-  });
+  startDaemon(base({ runOneStarFn: async () => { onestar++; } }));
   await new Promise((r) => setImmediate(r));
   assert.equal(onestar, 1);
 });
 
 test('runs the movements check on boot when it is Monday', async () => {
   let movements = 0;
-  const { setIntervalFn } = fakeTimers();
-  startDaemon({
-    runOneStarFn: async () => {},
+  startDaemon(base({
     runMovementsFn: async () => { movements++; },
     now: () => new Date('2026-06-08T08:00:00Z'), // Monday
-    setIntervalFn, log: silent,
-  });
+  }));
   await new Promise((r) => setImmediate(r));
   assert.equal(movements, 1);
 });
 
 test('does not run the movements check on boot when it is not Monday', async () => {
   let movements = 0;
-  const { setIntervalFn } = fakeTimers();
-  startDaemon({
-    runOneStarFn: async () => {},
-    runMovementsFn: async () => { movements++; },
-    now: () => new Date('2026-06-09T08:00:00Z'), // Tuesday
-    setIntervalFn, log: silent,
-  });
+  startDaemon(base({ runMovementsFn: async () => { movements++; } }));
   await new Promise((r) => setImmediate(r));
   assert.equal(movements, 0);
 });
 
 test('registers two interval timers with the expected periods', () => {
   const { setIntervalFn, cbs } = fakeTimers();
-  startDaemon({
-    runOneStarFn: async () => {},
-    runMovementsFn: async () => {},
-    now: () => new Date('2026-06-09T08:00:00Z'),
-    setIntervalFn, log: silent,
-  });
+  startDaemon(base({ setIntervalFn }));
   const periods = cbs.map((c) => c.ms).sort((a, b) => a - b);
   assert.deepEqual(periods, [15 * 60 * 1000, 60 * 60 * 1000]);
 });
@@ -66,12 +59,11 @@ test('the movements interval tick only runs the check on a Monday', async () => 
   let movements = 0;
   let now = new Date('2026-06-09T08:00:00Z'); // Tuesday at boot
   const { setIntervalFn, cbs } = fakeTimers();
-  startDaemon({
-    runOneStarFn: async () => {},
+  startDaemon(base({
     runMovementsFn: async () => { movements++; },
     now: () => now,
-    setIntervalFn, log: silent,
-  });
+    setIntervalFn,
+  }));
   await new Promise((r) => setImmediate(r));
   assert.equal(movements, 0); // boot tick on Tuesday: nothing
 
@@ -83,17 +75,42 @@ test('the movements interval tick only runs the check on a Monday', async () => 
   assert.equal(movements, 1);
 });
 
+test('on a fresh install the boot pass seeds state via mark-seen instead of posting', async () => {
+  const onestarCalls = [];
+  const movementsCalls = [];
+  startDaemon(base({
+    isFreshInstall: () => true,
+    runOneStarFn: async (opts) => { onestarCalls.push(opts); },
+    runMovementsFn: async (opts) => { movementsCalls.push(opts); },
+    now: () => new Date('2026-06-09T08:00:00Z'), // Tuesday: movements would normally NOT run
+  }));
+  await new Promise((r) => setImmediate(r));
+  // Both seeded with markSeen, even though it is not Monday.
+  assert.deepEqual(onestarCalls, [{ markSeen: true }]);
+  assert.deepEqual(movementsCalls, [{ markSeen: true }]);
+});
+
+test('after a fresh boot, interval ticks run normally (no mark-seen)', async () => {
+  const onestarCalls = [];
+  const { setIntervalFn, cbs } = fakeTimers();
+  startDaemon(base({
+    isFreshInstall: () => true,
+    runOneStarFn: async (opts) => { onestarCalls.push(opts); },
+    setIntervalFn,
+  }));
+  await new Promise((r) => setImmediate(r));
+  const onestarTick = cbs.find((c) => c.ms === 15 * 60 * 1000).cb;
+  await onestarTick();
+  // Boot seeded with mark-seen; the interval tick runs normally (no opts -> run() defaults to a real post).
+  assert.deepEqual(onestarCalls, [{ markSeen: true }, undefined]);
+});
+
 test('stop clears all timers', () => {
   const cleared = [];
-  const setIntervalFn = (cb, ms) => ({ ms });
-  const { stop } = startDaemon({
-    runOneStarFn: async () => {},
-    runMovementsFn: async () => {},
-    now: () => new Date('2026-06-09T08:00:00Z'),
-    setIntervalFn,
+  const { stop } = startDaemon(base({
+    setIntervalFn: (cb, ms) => ({ ms }),
     clearIntervalFn: (t) => cleared.push(t.ms),
-    log: silent,
-  });
+  }));
   stop();
   assert.equal(cleared.length, 2);
 });

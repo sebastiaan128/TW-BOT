@@ -7,14 +7,14 @@
 // skipped — a slow run must never let ticks stack up.
 export function guarded(fn, { label = 'task', log = console } = {}) {
   let running = false;
-  return async function () {
+  return async function (...args) {
     if (running) {
       log.warn?.(`[${label}] previous run still in progress; skipping tick`);
       return { skipped: true };
     }
     running = true;
     try {
-      const result = await fn();
+      const result = await fn(...args);
       return { result };
     } catch (e) {
       log.error?.(`[${label}] run failed: ${e.message}`);
