@@ -33,7 +33,25 @@ zorgt dat elke reset **één keer** wordt aangekondigd, ook als de bot vaker dra
    van het doelkanaal.
 4. Controleer de live detectie: `npm run dry-run` (rendert naar `out/`, post niet).
 
-## Draaien
+## Always-on draaien (aanbevolen op bot-hosting)
+
+`npm run serve` start een langlopend proces (`src/daemon.js`) dat zélf de timers
+beheert — geen externe cron nodig. Dit is het start-commando voor hosting die een
+proces blijft draaien (bijv. Pterodactyl-panelen):
+
+- 1-ster shame: elke 15 minuten.
+- Promotie/degradatie: elke maandag (bepaald in Europe/Amsterdam), één keer.
+- Beide draaien ook meteen één keer bij opstart.
+- Een gefaalde run (CoC/Discord) wordt gelogd maar laat het proces dóórdraaien;
+  een trage run stapelt niet (overlap-guard).
+
+Secrets via env-vars: het paneel start `node src/daemon.js` zónder `--env-file`,
+dus zet `COC_API_KEY` en `DISCORD_BOT_TOKEN` in de omgeving van de host.
+
+**Eerste deploy:** draai éénmalig `npm run mark-seen` en `npm run onestar:mark-seen`
+zodat de daemon niet de huidige reset / bestaande battlelog in één keer dumpt.
+
+## Los draaien (cron of handmatig)
 
 - Normaal: `npm start` — post de bewegingen van de laatste reset (één keer per
   reset; daarna doet een herhaalde run niets tot de volgende reset).

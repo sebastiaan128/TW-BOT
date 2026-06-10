@@ -2,3 +2,5 @@ node_modules/
 data/
 out/
 .env
+.DS_Store
+.idea/
