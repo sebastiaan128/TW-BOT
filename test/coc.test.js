@@ -101,6 +101,37 @@ test('legendOnePlayers returns only tier-I members across clans', async () => {
   assert.deepEqual(players, [{ tag: '#A', name: 'Alice' }, { tag: '#C', name: 'Carol' }]);
 });
 
+test('legendOnePlayers skips a clan whose endpoint keeps failing and keeps the rest', async () => {
+  const fetchImpl = async (url) => {
+    if (url.includes('%23BAD/members')) return { ok: false, status: 503, json: async () => ({}) };
+    if (url.includes('%23C2/members')) return { ok: true, status: 200, json: async () => ({ items: [
+      { tag: '#C', name: 'Carol', leagueTier: { id: 105000036 } }, // L1
+    ] }) };
+    return { ok: false, status: 404, json: async () => ({}) };
+  };
+  // #BAD is first; its failure must NOT abort the whole run.
+  const players = await legendOnePlayers(['#BAD', '#C2'], 'key', { fetchImpl, sleep: async () => {} });
+  assert.deepEqual(players, [{ tag: '#C', name: 'Carol' }]);
+});
+
+test('detectMovements skips a clan whose members endpoint keeps failing and keeps the rest', async () => {
+  const fetchImpl = async (url) => {
+    if (url.includes('%23BAD/members')) return { ok: false, status: 503, json: async () => ({}) };
+    if (url.includes('%23C2/members')) return { ok: true, status: 200, json: async () => ({ items: [
+      { tag: '#P2', name: 'Bob', leagueTier: { id: 105000036 } }, // now L1
+    ] }) };
+    if (url.includes('/players/%23P2/leaguehistory')) return { ok: true, status: 200, json: async () => ({ items: [
+      { leagueSeasonId: 1780290000, leagueTierId: 105000035 }, // last completed: L2 -> now L1 = promoted
+    ] }) };
+    return { ok: false, status: 404, json: async () => ({}) };
+  };
+  // #BAD is first; its failure must NOT abort the whole scan.
+  const { season, promotions, demotions } = await detectMovements(['#BAD', '#C2'], 'key', { fetchImpl, sleep: async () => {} });
+  assert.equal(season, 1780290000);
+  assert.deepEqual(promotions, [{ tag: '#P2', name: 'Bob' }]);
+  assert.deepEqual(demotions, []);
+});
+
 test('detectMovements finds L2->L1 / L1->L2 at the latest reset and skips stale histories', async () => {
   const fetchImpl = fakeFetch({
     // current members across two clans

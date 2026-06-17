@@ -57,10 +57,18 @@ export function latestHistoryEntry(items) {
 // Only players whose latest history season equals the global latest completed
 // season are considered — this skips stale histories (players who didn't play
 // the last week), avoiding false movements from old transitions.
-export async function detectMovements(clanTags, apiKey, { fetchImpl = fetch } = {}) {
+// A clan or player whose endpoint keeps failing (e.g. CoC API 503/500) is
+// skipped with a warning rather than aborting the whole scan.
+export async function detectMovements(clanTags, apiKey, { fetchImpl = fetch, sleep } = {}) {
   const current = [];
   for (const tag of clanTags) {
-    const members = await withRetry(() => fetchClanMembers(tag, apiKey, { fetchImpl }));
+    let members;
+    try {
+      members = await withRetry(() => fetchClanMembers(tag, apiKey, { fetchImpl }), { sleep });
+    } catch (e) {
+      console.warn(`Members failed for ${tag}: ${e.message}`); // skip this clan, keep the rest
+      continue;
+    }
     for (const m of members) {
       const curTier = getTier(m);
       if (curTier) current.push({ tag: m.tag, name: m.name, curTier });
@@ -69,7 +77,13 @@ export async function detectMovements(clanTags, apiKey, { fetchImpl = fetch } = 
 
   const enriched = [];
   for (const p of current) {
-    const items = await withRetry(() => fetchLeagueHistory(p.tag, apiKey, { fetchImpl }));
+    let items;
+    try {
+      items = await withRetry(() => fetchLeagueHistory(p.tag, apiKey, { fetchImpl }), { sleep });
+    } catch (e) {
+      console.warn(`League history failed for ${p.tag}: ${e.message}`); // skip this player
+      continue;
+    }
     const last = latestHistoryEntry(items);
     enriched.push({ ...p, prevId: last?.leagueTierId ?? null, prevSeason: last?.leagueSeasonId ?? null });
   }
@@ -107,10 +121,19 @@ export function oneStarAttacks(items) {
 }
 
 // Members currently in Legend 1 (tier I) across the given clans.
-export async function legendOnePlayers(clanTags, apiKey, { fetchImpl = fetch } = {}) {
+// A clan whose endpoint keeps failing (e.g. CoC API 503/500) is skipped with a
+// warning rather than aborting the whole run — its players are picked up on the
+// next tick once the endpoint recovers.
+export async function legendOnePlayers(clanTags, apiKey, { fetchImpl = fetch, sleep } = {}) {
   const players = [];
   for (const tag of clanTags) {
-    const members = await withRetry(() => fetchClanMembers(tag, apiKey, { fetchImpl }));
+    let members;
+    try {
+      members = await withRetry(() => fetchClanMembers(tag, apiKey, { fetchImpl }), { sleep });
+    } catch (e) {
+      console.warn(`Members failed for ${tag}: ${e.message}`); // skip this clan, keep the rest
+      continue;
+    }
     for (const m of members) {
       if (getTier(m) === 'I') players.push({ tag: m.tag, name: m.name });
     }
