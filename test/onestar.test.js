@@ -15,7 +15,9 @@ function makeDeps(overrides = {}) {
       { battleType: 'ranked', attack: true, stars: 1, opponentPlayerTag: '#O9', destructionPercentage: 50 },
     ],
   };
+  calls.logs = [];
   const deps = {
+    log: { log: (m) => calls.logs.push(m), warn: () => {} },
     loadConfig: () => ({
       cocApiKey: 'k', botToken: 'tok', clanTags: ['#C'],
       render: { onestar: {} }, outDir: 'out',
@@ -48,6 +50,15 @@ test('posts only new 1-star attacks, reacts with custom emoji, updates state', a
   assert.deepEqual(saved['#A'].sort(), ['#O1|79', '#O2|88']);
   assert.deepEqual(saved['#B'], ['#O9|50']);
   assert.equal(r.posted.length, 2);
+});
+
+test('logs a one-line run summary of players, posts, and skips', async () => {
+  const { deps, calls } = makeDeps({
+    fetchBattleLog: async (tag) => { if (tag === '#A') throw new Error('boom'); return [{ battleType: 'ranked', attack: true, stars: 1, opponentPlayerTag: '#O9', destructionPercentage: 50 }]; },
+    readSnapshot: async () => ({}),
+  });
+  await run({}, deps);
+  assert.deepEqual(calls.logs, ['onestar: 2 player(s), 1 posted, 1 skipped']);
 });
 
 test('mark-seen records signatures without posting', async () => {
