@@ -58,7 +58,7 @@ test('logs a one-line run summary of players, posts, and skips', async () => {
     readSnapshot: async () => ({}),
   });
   await run({}, deps);
-  assert.deepEqual(calls.logs, ['onestar: 2 player(s), 1 posted, 1 skipped']);
+  assert.deepEqual(calls.logs, ['onestar: 2 player(s), 1 posted, 1 skipped (seen-state: 0 players)']);
 });
 
 test('mark-seen records signatures without posting', async () => {

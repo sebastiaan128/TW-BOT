@@ -49,6 +49,7 @@ export function startDaemon({
   // immediately so the bot works the moment the host starts it.
   const fresh = isFreshInstall();
   if (fresh) log.log?.('[daemon] fresh install — seeding state (mark-seen), not posting this round');
+  else log.log?.('[daemon] existing state found — running normally');
   const bootOpts = fresh ? { markSeen: true } : {};
   onestarTask(bootOpts);
   movementsTick(bootOpts);
