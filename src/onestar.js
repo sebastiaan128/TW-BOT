@@ -17,7 +17,7 @@ const sig = (a) => `${a.opponentPlayerTag}|${a.destructionPercentage}`;
 
 const defaultDeps = {
   loadConfig, legendOnePlayers, fetchBattleLog, readSnapshot, writeSnapshot,
-  renderFields, postGraphic, addReaction, fetchEmojiId, saveLocal,
+  renderFields, postGraphic, addReaction, fetchEmojiId, saveLocal, log: console,
 };
 
 export async function run(options = {}, deps = defaultDeps) {
@@ -42,12 +42,14 @@ export async function run(options = {}, deps = defaultDeps) {
   }
 
   const posted = [];
+  let skipped = 0;
   for (const p of players) {
     let items;
     try {
       items = await withRetry(() => d.fetchBattleLog(p.tag, config.cocApiKey), { retries: 2, baseDelayMs: 300 });
     } catch (e) {
       console.warn(`Battlelog failed for ${p.tag}: ${e.message}`); // leave state untouched
+      skipped++;
       continue;
     }
     const attacks = oneStarAttacks(items);
@@ -87,6 +89,7 @@ export async function run(options = {}, deps = defaultDeps) {
     return { marked: true, posted: [] };
   }
   if (!dryRun) await d.writeSnapshot(os.statePath, newState);
+  d.log.log(`onestar: ${players.length} player(s), ${posted.length} posted, ${skipped} skipped`);
   return { posted };
 }
 
