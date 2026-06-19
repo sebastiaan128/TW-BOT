@@ -89,7 +89,7 @@ export async function run(options = {}, deps = defaultDeps) {
     return { marked: true, posted: [] };
   }
   if (!dryRun) await d.writeSnapshot(os.statePath, newState);
-  d.log.log(`onestar: ${players.length} player(s), ${posted.length} posted, ${skipped} skipped`);
+  d.log.log(`onestar: ${players.length} player(s), ${posted.length} posted, ${skipped} skipped (seen-state: ${Object.keys(state).length} players)`);
   return { posted };
 }
 

@@ -105,6 +105,16 @@ test('after a fresh boot, interval ticks run normally (no mark-seen)', async () 
   assert.deepEqual(onestarCalls, [{ markSeen: true }, undefined]);
 });
 
+test('logs that it is running normally when state already exists', async () => {
+  const logs = [];
+  startDaemon(base({
+    isFreshInstall: () => false,
+    log: { warn() {}, error() {}, log: (m) => logs.push(m) },
+  }));
+  await new Promise((r) => setImmediate(r));
+  assert.ok(logs.some((m) => /existing state.*running normally/i.test(m)), `expected a running-normally line, got: ${JSON.stringify(logs)}`);
+});
+
 test('stop clears all timers', () => {
   const cleared = [];
   const { stop } = startDaemon(base({
