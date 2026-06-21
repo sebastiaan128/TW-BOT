@@ -7,12 +7,12 @@ function makeDeps(overrides = {}) {
   const calls = { posts: [], reactions: [], writes: [], renders: [], saved: 0 };
   const battlelogs = {
     '#A': [
-      { battleType: 'ranked', attack: true, stars: 1, opponentPlayerTag: '#O1', destructionPercentage: 79 },
-      { battleType: 'ranked', attack: true, stars: 1, opponentPlayerTag: '#O2', destructionPercentage: 88 },
-      { battleType: 'ranked', attack: true, stars: 3, opponentPlayerTag: '#O3', destructionPercentage: 100 },
+      { battleType: 'legend', attack: true, stars: 1, opponentPlayerTag: '#O1', destructionPercentage: 79 },
+      { battleType: 'legend', attack: true, stars: 1, opponentPlayerTag: '#O2', destructionPercentage: 88 },
+      { battleType: 'legend', attack: true, stars: 3, opponentPlayerTag: '#O3', destructionPercentage: 100 },
     ],
     '#B': [
-      { battleType: 'ranked', attack: true, stars: 1, opponentPlayerTag: '#O9', destructionPercentage: 50 },
+      { battleType: 'legend', attack: true, stars: 1, opponentPlayerTag: '#O9', destructionPercentage: 50 },
     ],
   };
   calls.logs = [];
@@ -54,7 +54,7 @@ test('posts only new 1-star attacks, reacts with custom emoji, updates state', a
 
 test('logs a one-line run summary of players, posts, and skips', async () => {
   const { deps, calls } = makeDeps({
-    fetchBattleLog: async (tag) => { if (tag === '#A') throw new Error('boom'); return [{ battleType: 'ranked', attack: true, stars: 1, opponentPlayerTag: '#O9', destructionPercentage: 50 }]; },
+    fetchBattleLog: async (tag) => { if (tag === '#A') throw new Error('boom'); return [{ battleType: 'legend', attack: true, stars: 1, opponentPlayerTag: '#O9', destructionPercentage: 50 }]; },
     readSnapshot: async () => ({}),
   });
   await run({}, deps);
@@ -73,7 +73,7 @@ test('mark-seen records signatures without posting', async () => {
 
 test('a player whose battlelog fetch fails is skipped without touching their state', async () => {
   const { deps, calls } = makeDeps({
-    fetchBattleLog: async (tag) => { if (tag === '#A') throw new Error('boom'); return [{ battleType: 'ranked', attack: true, stars: 1, opponentPlayerTag: '#O9', destructionPercentage: 50 }]; },
+    fetchBattleLog: async (tag) => { if (tag === '#A') throw new Error('boom'); return [{ battleType: 'legend', attack: true, stars: 1, opponentPlayerTag: '#O9', destructionPercentage: 50 }]; },
     readSnapshot: async () => ({ '#A': ['#O1|79'] }),
   });
   const r = await run({}, deps);

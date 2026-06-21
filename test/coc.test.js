@@ -59,11 +59,13 @@ test('fetchLeagueHistory hits the leaguehistory endpoint and returns items', asy
 // test/coc.test.js — toevoegen onderaan
 import { fetchBattleLog, oneStarAttacks, legendOnePlayers } from '../src/coc.js';
 
-test('oneStarAttacks keeps only ranked attacks with exactly 1 star', () => {
+test('oneStarAttacks keeps only legend attacks with exactly 1 star', () => {
+  // battleType is "legend" for ranked legend-league battles (verified live
+  // against the CoC API 2026-06-21); "homeVillage" is regular farming.
   const items = [
-    { battleType: 'ranked', attack: true, stars: 1, opponentPlayerTag: '#O1', destructionPercentage: 79 },
-    { battleType: 'ranked', attack: true, stars: 2, opponentPlayerTag: '#O2', destructionPercentage: 91 },
-    { battleType: 'ranked', attack: false, stars: 1, opponentPlayerTag: '#O3', destructionPercentage: 100 }, // defense
+    { battleType: 'legend', attack: true, stars: 1, opponentPlayerTag: '#O1', destructionPercentage: 79 },
+    { battleType: 'legend', attack: true, stars: 2, opponentPlayerTag: '#O2', destructionPercentage: 91 },
+    { battleType: 'legend', attack: false, stars: 1, opponentPlayerTag: '#O3', destructionPercentage: 100 }, // defense
     { battleType: 'homeVillage', attack: true, stars: 1, opponentPlayerTag: '#O4', destructionPercentage: 50 }, // farm
   ];
   assert.deepEqual(oneStarAttacks(items), [

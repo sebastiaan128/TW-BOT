@@ -113,10 +113,12 @@ export async function fetchBattleLog(playerTag, apiKey, { fetchImpl = fetch } = 
   return data.items ?? [];
 }
 
-// 1-star Legend attacks = ranked battle, this player attacking, exactly 1 star.
+// 1-star Legend attacks = legend-league battle, this player attacking, exactly
+// 1 star. The CoC battlelog tags ranked legend battles as battleType "legend"
+// (regular farming is "homeVillage"); verified live against the API 2026-06-21.
 export function oneStarAttacks(items) {
   return (items ?? [])
-    .filter((b) => b.battleType === 'ranked' && b.attack === true && b.stars === 1)
+    .filter((b) => b.battleType === 'legend' && b.attack === true && b.stars === 1)
     .map((b) => ({ opponentPlayerTag: b.opponentPlayerTag, destructionPercentage: b.destructionPercentage }));
 }
 
