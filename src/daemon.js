@@ -11,7 +11,7 @@ import { guarded, makeMondayGate } from './scheduler.js';
 
 const MINUTE = 60 * 1000;
 export const ONESTAR_INTERVAL_MS = 15 * MINUTE;   // 1-star shame: every 15 minutes
-export const MOVEMENTS_TICK_MS = 60 * MINUTE;     // promotion/demotion: hourly tick, gated to Mondays
+export const MOVEMENTS_TICK_MS = 60 * MINUTE;     // promotion/demotion: hourly tick, gated to Mondays from ~10:00 Amsterdam
 
 // A "fresh install" has no 1-star dedup file yet. Posting normally on the very
 // first boot would treat every existing battlelog attack as new and flood the
@@ -37,9 +37,10 @@ export function startDaemon({
   const movementsTask = guarded(runMovementsFn, { label: 'movements', log });
   const mondayGate = makeMondayGate({ now });
 
-  // The promotion check fires at most once per Monday; the hourly tick just
-  // asks the gate whether today is that Monday yet. A mark-seen boot pass runs
-  // regardless of weekday — it only records the current reset as seen.
+  // The promotion/demotion check fires at most once per Monday, from ~10:00
+  // Amsterdam onward; the hourly tick just asks the gate whether it's that
+  // Monday-after-10:00 yet. A mark-seen boot pass runs regardless of weekday/hour
+  // — it only records the current reset as seen.
   const movementsTick = async (opts = {}) => {
     if (opts.markSeen) { await movementsTask(opts); return; }
     if (mondayGate()) await movementsTask();
@@ -73,7 +74,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   try { process.loadEnvFile('.env'); } catch { /* no .env file: rely on real env vars */ }
 
   startDaemon();
-  console.log('[daemon] started — onestar every 15m, promotion check on Mondays (Europe/Amsterdam)');
+  console.log('[daemon] started — onestar every 15m, promotion/demotion check Mondays from ~10:00 (Europe/Amsterdam)');
   const shutdown = (sig) => { console.log(`[daemon] ${sig} received, shutting down`); process.exit(0); };
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));

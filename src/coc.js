@@ -43,10 +43,26 @@ export async function fetchLeagueHistory(playerTag, apiKey, { fetchImpl = fetch 
   return data.items ?? [];
 }
 
-// The most recent (highest seasonId) completed-season entry, or null.
+// The most recent completed-week entry, or null. A week can have multiple
+// records during an L1<->L2 transition (API returns them oldest-first: pre-reset
+// tier, then final tier); `>=` keeps the LAST record for the highest seasonId,
+// i.e. the player's final tier for that week. Using `>` would keep the pre-reset
+// tier and falsely flag players who already moved as moving again.
 export function latestHistoryEntry(items) {
   if (!items || items.length === 0) return null;
-  return items.reduce((a, b) => (b.leagueSeasonId > a.leagueSeasonId ? b : a));
+  return items.reduce((a, b) => (b.leagueSeasonId >= a.leagueSeasonId ? b : a));
+}
+
+// Collapse leaguehistory to one settled entry per completed week (the final
+// record for each seasonId), oldest week first. During an L1<->L2 transition a
+// week has two records (pre-reset tier, then final tier); the final one wins.
+// The last two entries are the tiers the player settled at in the two most
+// recent completed weeks — what demotion detection compares.
+export function settledWeeks(items) {
+  if (!items || items.length === 0) return [];
+  const bySeason = new Map();
+  for (const it of items) bySeason.set(it.leagueSeasonId, it); // oldest-first -> last write is the final tier
+  return [...bySeason.values()].sort((a, b) => a.leagueSeasonId - b.leagueSeasonId);
 }
 
 // Detects who moved between Legend 1 and Legend 2 at the most recent reset, by
@@ -84,8 +100,15 @@ export async function detectMovements(clanTags, apiKey, { fetchImpl = fetch, sle
       console.warn(`League history failed for ${p.tag}: ${e.message}`); // skip this player
       continue;
     }
-    const last = latestHistoryEntry(items);
-    enriched.push({ ...p, prevId: last?.leagueTierId ?? null, prevSeason: last?.leagueSeasonId ?? null });
+    const weeks = settledWeeks(items);
+    const latest = weeks[weeks.length - 1] ?? null;
+    const prior = weeks[weeks.length - 2] ?? null;
+    enriched.push({
+      ...p,
+      prevId: latest?.leagueTierId ?? null,
+      prevSeason: latest?.leagueSeasonId ?? null,
+      priorId: prior?.leagueTierId ?? null,
+    });
   }
 
   const season = enriched.reduce((mx, e) => (e.prevSeason && e.prevSeason > mx ? e.prevSeason : mx), 0) || null;
@@ -93,10 +116,20 @@ export async function detectMovements(clanTags, apiKey, { fetchImpl = fetch, sle
   const promotions = [];
   const demotions = [];
   for (const e of enriched) {
-    if (e.prevSeason !== season) continue; // skip stale histories
-    const prevTier = tierFromId(e.prevId);
-    if (prevTier === 'II' && e.curTier === 'I') promotions.push({ tag: e.tag, name: e.name });
-    else if (prevTier === 'I' && e.curTier === 'II') demotions.push({ tag: e.tag, name: e.name });
+    if (e.prevSeason !== season) continue; // skip stale histories: only the most recent reset
+    const prevTier = tierFromId(e.prevId);   // settled tier of the latest completed week
+    const priorTier = tierFromId(e.priorId); // settled tier of the week before that
+    if (prevTier === 'II' && e.curTier === 'I') {
+      promotions.push({ tag: e.tag, name: e.name });
+    } else if (prevTier === 'I' && e.curTier === 'II') {
+      // History still lags: the latest completed week was L1, the live tier is L2.
+      demotions.push({ tag: e.tag, name: e.name });
+    } else if (prevTier === 'II' && e.curTier === 'II' && priorTier === 'I') {
+      // History has caught up: a demoted player's new L2 tier is written into
+      // leaguehistory immediately, so latest == current == L2. The demotion is
+      // only visible across the last two completed weeks: L1 -> L2.
+      demotions.push({ tag: e.tag, name: e.name });
+    }
   }
 
   return { season, promotions, demotions };

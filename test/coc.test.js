@@ -27,6 +27,20 @@ test('latestHistoryEntry picks the highest seasonId regardless of order', () => 
   assert.equal(latestHistoryEntry(items).leagueSeasonId, 1780290000);
 });
 
+test('latestHistoryEntry picks the FINAL entry when a week has duplicate records', () => {
+  // During an L1<->L2 transition the API returns two records for the same week
+  // (oldest-first): the pre-reset tier, then the final tier. We must pick the
+  // final one, otherwise a player who ended last week at L2 looks like a fresh
+  // demotion. (Verified live 2026-06-22: e.g. TW Gissa had [L1, L2] for the
+  // same seasonId and was wrongly flagged as demoting again.)
+  const items = [
+    { leagueSeasonId: 1779080400, leagueTierId: 105000036 }, // older week, L1
+    { leagueSeasonId: 1781499600, leagueTierId: 105000036 }, // latest week, pre-reset L1
+    { leagueSeasonId: 1781499600, leagueTierId: 105000035 }, // latest week, FINAL L2
+  ];
+  assert.equal(latestHistoryEntry(items).leagueTierId, 105000035);
+});
+
 function fakeFetch(map) {
   return async (url) => {
     const key = Object.keys(map).find((k) => url.includes(k));
@@ -131,6 +145,67 @@ test('detectMovements skips a clan whose members endpoint keeps failing and keep
   const { season, promotions, demotions } = await detectMovements(['#BAD', '#C2'], 'key', { fetchImpl, sleep: async () => {} });
   assert.equal(season, 1780290000);
   assert.deepEqual(promotions, [{ tag: '#P2', name: 'Bob' }]);
+  assert.deepEqual(demotions, []);
+});
+
+test('detectMovements flags a demotion when leaguehistory has already recorded the new L2 tier', async () => {
+  // A demoted player's new tier is written into leaguehistory immediately, so the
+  // latest history record already reads L2 (== current members tier). Comparing
+  // only latest-history-vs-members misses this; we must look at the two most
+  // recent completed weeks: prior week L1 -> latest week L2 = demotion.
+  const fetchImpl = fakeFetch({
+    '/clans/%23C1/members': { items: [
+      { tag: '#P1', name: 'Daan', leagueTier: { id: 105000035 } }, // now L2
+    ] },
+    '/players/%23P1/leaguehistory': { items: [
+      { leagueSeasonId: 1781499600, leagueTierId: 105000036 }, // prior completed week: L1
+      { leagueSeasonId: 1782709200, leagueTierId: 105000035 }, // latest completed week: L2 (already recorded)
+    ] },
+  });
+  const { season, promotions, demotions } = await detectMovements(['#C1'], 'key', { fetchImpl });
+  assert.equal(season, 1782709200);
+  assert.deepEqual(promotions, []);
+  assert.deepEqual(demotions, [{ tag: '#P1', name: 'Daan' }]);
+});
+
+test('detectMovements does NOT re-flag a player who settled at L2 in a previous week', async () => {
+  // The original false-demotion bug: a duplicate latest week [pre-reset L1, final
+  // L2] whose prior completed week was ALSO L2. Both settled weeks are L2, so
+  // there is no fresh L1->L2 move to announce.
+  const fetchImpl = fakeFetch({
+    '/clans/%23C1/members': { items: [
+      { tag: '#P1', name: 'Gissa', leagueTier: { id: 105000035 } }, // now L2
+    ] },
+    '/players/%23P1/leaguehistory': { items: [
+      { leagueSeasonId: 1781499600, leagueTierId: 105000035 }, // prior completed week: L2
+      { leagueSeasonId: 1782709200, leagueTierId: 105000036 }, // latest week, pre-reset L1
+      { leagueSeasonId: 1782709200, leagueTierId: 105000035 }, // latest week, FINAL L2
+    ] },
+  });
+  const { promotions, demotions } = await detectMovements(['#C1'], 'key', { fetchImpl });
+  assert.deepEqual(promotions, []);
+  assert.deepEqual(demotions, []);
+});
+
+test('detectMovements skips a caught-up demotion whose latest week is older than the reset', async () => {
+  // #OLD demoted L1->L2, but its newest record predates the current reset while
+  // #NEW is active this reset. The stale demotion must not be announced now.
+  const fetchImpl = fakeFetch({
+    '/clans/%23C1/members': { items: [
+      { tag: '#OLD', name: 'Stale', leagueTier: { id: 105000035 } }, // now L2, demoted long ago
+      { tag: '#NEW', name: 'Fresh', leagueTier: { id: 105000036 } }, // now L1, promoted this reset
+    ] },
+    '/players/%23OLD/leaguehistory': { items: [
+      { leagueSeasonId: 1780894800, leagueTierId: 105000036 }, // prior week: L1
+      { leagueSeasonId: 1781499600, leagueTierId: 105000035 }, // latest (stale) week: L2
+    ] },
+    '/players/%23NEW/leaguehistory': { items: [
+      { leagueSeasonId: 1782709200, leagueTierId: 105000035 }, // latest completed week: L2 -> now L1
+    ] },
+  });
+  const { season, promotions, demotions } = await detectMovements(['#C1'], 'key', { fetchImpl });
+  assert.equal(season, 1782709200);
+  assert.deepEqual(promotions, [{ tag: '#NEW', name: 'Fresh' }]);
   assert.deepEqual(demotions, []);
 });
 

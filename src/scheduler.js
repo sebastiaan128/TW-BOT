@@ -40,14 +40,23 @@ export function dayKeyInZone(date, timeZone) {
   }).format(date);
 }
 
+// Hour of day (0..23) as observed in a given IANA timezone. DST-aware.
+export function hourInZone(date, timeZone) {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone, hour: 'numeric', hour12: false }).formatToParts(date);
+  const hour = parts.find((p) => p.type === 'hour')?.value;
+  return Number(hour) % 24; // hour12:false can render midnight as '24' in some engines
+}
+
 // Returns a gate function that yields true at most once per Monday (in the
-// given timezone). Repeated ticks on the same Monday return false; the gate
-// re-arms on the next Monday.
-export function makeMondayGate({ timeZone = 'Europe/Amsterdam', now = () => new Date() } = {}) {
+// given timezone), and only from `afterHour` local time onward. Repeated ticks
+// on the same Monday return false; the gate re-arms on the next Monday. With an
+// hourly tick this fires at the first tick at/after `afterHour` — i.e. ~10:00.
+export function makeMondayGate({ timeZone = 'Europe/Amsterdam', afterHour = 10, now = () => new Date() } = {}) {
   let lastFiredDay = null;
   return function shouldRun() {
     const d = now();
     if (weekdayInZone(d, timeZone) !== 1) return false;
+    if (hourInZone(d, timeZone) < afterHour) return false;
     const key = dayKeyInZone(d, timeZone);
     if (key === lastFiredDay) return false;
     lastFiredDay = key;
