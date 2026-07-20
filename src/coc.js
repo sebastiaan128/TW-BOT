@@ -3,6 +3,11 @@ import { withRetry } from './util.js';
 
 const API_BASE = 'https://api.clashofclans.com/v1';
 
+// Ranked Legend weeks reset every Monday, so consecutive leagueSeasonId values
+// differ by exactly one week (seconds). Used to tell whether two settled weeks
+// in a player's history are adjacent.
+const WEEK = 7 * 24 * 60 * 60; // 604800
+
 // Legend tiers are identified by leagueTier id (verified live 2026-06-08):
 //   105000036 = Legend 1 (highest), 105000035 = Legend 2.
 // Lower ids are below Legend 2 (a finer ladder). The bot only acts on L1<->L2,
@@ -108,10 +113,26 @@ export async function detectMovements(clanTags, apiKey, { fetchImpl = fetch, sle
       prevId: latest?.leagueTierId ?? null,
       prevSeason: latest?.leagueSeasonId ?? null,
       priorId: prior?.leagueTierId ?? null,
+      priorSeason: prior?.leagueSeasonId ?? null,
     });
   }
 
-  const season = enriched.reduce((mx, e) => (e.prevSeason && e.prevSeason > mx ? e.prevSeason : mx), 0) || null;
+  // The season baseline is the most common prevSeason among all players, not
+  // the max: a handful of just-promoted players carry an in-progress Legend-1
+  // season entry (a different, non-weekly cadence) stamped with a newer id
+  // than the rest of the L2 pack's last *settled* week. Taking the max would
+  // anchor the baseline to that in-progress entry and skip every real
+  // promotion as "stale" since none of them can match it. The mode reflects
+  // the week the bulk of players have actually settled at.
+  const counts = new Map();
+  for (const e of enriched) {
+    if (!e.prevSeason) continue;
+    counts.set(e.prevSeason, (counts.get(e.prevSeason) ?? 0) + 1);
+  }
+  let season = null, bestCount = 0;
+  for (const [s, count] of counts) {
+    if (count > bestCount || (count === bestCount && s > season)) { season = s; bestCount = count; }
+  }
 
   const promotions = [];
   const demotions = [];
@@ -124,10 +145,19 @@ export async function detectMovements(clanTags, apiKey, { fetchImpl = fetch, sle
     } else if (prevTier === 'I' && e.curTier === 'II') {
       // History still lags: the latest completed week was L1, the live tier is L2.
       demotions.push({ tag: e.tag, name: e.name });
-    } else if (prevTier === 'II' && e.curTier === 'II' && priorTier === 'I') {
+    } else if (
+      prevTier === 'II' && e.curTier === 'II' && priorTier === 'I' &&
+      e.prevSeason - e.priorSeason === WEEK
+    ) {
       // History has caught up: a demoted player's new L2 tier is written into
       // leaguehistory immediately, so latest == current == L2. The demotion is
       // only visible across the last two completed weeks: L1 -> L2.
+      //
+      // Require those two settled weeks to be ADJACENT. A player with a gap in
+      // history (e.g. L1 four weeks ago, then L2 landing on this reset with the
+      // weeks between missing) is NOT a fresh demotion — that L1->L2 transition
+      // happened somewhere in the gap and was already announced. Without the
+      // adjacency check the stale drop re-fires every reset.
       demotions.push({ tag: e.tag, name: e.name });
     }
   }
