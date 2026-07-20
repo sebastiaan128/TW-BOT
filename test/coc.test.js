@@ -158,8 +158,8 @@ test('detectMovements flags a demotion when leaguehistory has already recorded t
       { tag: '#P1', name: 'Daan', leagueTier: { id: 105000035 } }, // now L2
     ] },
     '/players/%23P1/leaguehistory': { items: [
-      { leagueSeasonId: 1781499600, leagueTierId: 105000036 }, // prior completed week: L1
-      { leagueSeasonId: 1782709200, leagueTierId: 105000035 }, // latest completed week: L2 (already recorded)
+      { leagueSeasonId: 1782104400, leagueTierId: 105000036 }, // prior completed week: L1
+      { leagueSeasonId: 1782709200, leagueTierId: 105000035 }, // latest completed week: L2 (already recorded, adjacent week)
     ] },
   });
   const { season, promotions, demotions } = await detectMovements(['#C1'], 'key', { fetchImpl });
@@ -183,6 +183,27 @@ test('detectMovements does NOT re-flag a player who settled at L2 in a previous 
     ] },
   });
   const { promotions, demotions } = await detectMovements(['#C1'], 'key', { fetchImpl });
+  assert.deepEqual(promotions, []);
+  assert.deepEqual(demotions, []);
+});
+
+test('detectMovements does NOT flag a caught-up demotion whose two settled weeks are non-adjacent', async () => {
+  // Regression (2026-07-20): TW Bas / DM / Sander07 were demoted a week earlier
+  // and already announced, but their leaguehistory has a gap — the last L1 week
+  // is several weeks before the L2 week that landed on the current reset. Case 2
+  // compared those two non-adjacent settled weeks (L1 -> L2) and re-announced a
+  // stale demotion. A real caught-up demotion has ADJACENT completed weeks.
+  const fetchImpl = fakeFetch({
+    '/clans/%23C1/members': { items: [
+      { tag: '#P1', name: 'TW Bas', leagueTier: { id: 105000035 } }, // now L2
+    ] },
+    '/players/%23P1/leaguehistory': { items: [
+      { leagueSeasonId: 1781499600, leagueTierId: 105000036 }, // L1, four weeks before the reset
+      { leagueSeasonId: 1783918800, leagueTierId: 105000035 }, // L2 on the current reset (gap: W4,W5,W6 missing)
+    ] },
+  });
+  const { season, promotions, demotions } = await detectMovements(['#C1'], 'key', { fetchImpl });
+  assert.equal(season, 1783918800);
   assert.deepEqual(promotions, []);
   assert.deepEqual(demotions, []);
 });
