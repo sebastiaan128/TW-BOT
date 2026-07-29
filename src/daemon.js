@@ -13,17 +13,6 @@ const MINUTE = 60 * 1000;
 export const ONESTAR_INTERVAL_MS = 15 * MINUTE;   // 1-star shame: every 15 minutes
 export const MOVEMENTS_TICK_MS = 60 * MINUTE;     // promotion/demotion: hourly tick, gated to Mondays from ~10:00 Amsterdam
 
-// A "fresh install" has no 1-star dedup file yet. Posting normally on the very
-// first boot would treat every existing battlelog attack as new and flood the
-// channel, so the boot pass seeds state with mark-seen instead.
-function defaultIsFreshInstall() {
-  try {
-    return !existsSync(loadConfig().oneStar.statePath);
-  } catch {
-    return false; // config not loadable yet: don't claim fresh, let the run surface the error
-  }
-}
-
 // Movement detection compares live tiers against a stored per-player baseline.
 // Until that baseline exists (no snapshot, or an old snapshot with no `tiers`
 // key), the first real run would treat everyone as new and post nothing — so we
@@ -41,7 +30,6 @@ function defaultMovementsNeedsSeed() {
 export function startDaemon({
   runOneStarFn = (opts) => runOneStar(opts),
   runMovementsFn = (opts) => runMovements(opts),
-  isFreshInstall = defaultIsFreshInstall,
   movementsNeedsSeed = defaultMovementsNeedsSeed,
   now = () => new Date(),
   setIntervalFn = setInterval,
@@ -61,13 +49,15 @@ export function startDaemon({
     if (mondayGate()) await movementsTask();
   };
 
-  // Boot pass: seed state where a baseline is missing, otherwise run for real.
-  // Runs immediately so the bot works the moment the host starts it. The two
-  // features have independent baselines, so they are seeded independently.
-  const onestarFresh = isFreshInstall();
-  if (onestarFresh) log.log?.('[daemon] onestar: fresh install — seeding state (mark-seen), not posting this round');
-  else log.log?.('[daemon] onestar: existing state found — running normally');
-  onestarTask(onestarFresh ? { markSeen: true } : {});
+  // Boot pass. Runs immediately so the bot works the moment the host starts it.
+  //
+  // onestar ALWAYS seeds on boot (mark-seen): after any downtime the current
+  // battlelog would otherwise all count as "new" and be rendered+posted at once,
+  // which floods the channel and OOM-kills the container. Seeding records the
+  // current attacks as seen without posting, so only attacks that happen while
+  // the bot is online get posted. The 15-min tick does the real posting.
+  log.log?.('[daemon] onestar: seeding current battlelog as baseline — only posting attacks from now on');
+  onestarTask({ markSeen: true });
 
   if (movementsNeedsSeed()) {
     log.log?.('[daemon] movements: no tier baseline yet — seeding (mark-seen), not posting this round');

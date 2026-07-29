@@ -16,7 +16,6 @@ function base(overrides = {}) {
   return {
     runOneStarFn: async () => {},
     runMovementsFn: async () => {},
-    isFreshInstall: () => false,
     movementsNeedsSeed: () => false,
     now: () => new Date('2026-06-09T08:00:00Z'), // Tuesday
     setIntervalFn: fakeTimers().setIntervalFn,
@@ -25,11 +24,13 @@ function base(overrides = {}) {
   };
 }
 
-test('runs onestar once on boot', async () => {
-  let onestar = 0;
-  startDaemon(base({ runOneStarFn: async () => { onestar++; } }));
+test('seeds onestar on boot with mark-seen, never posting the backlog', async () => {
+  const onestarCalls = [];
+  startDaemon(base({ runOneStarFn: async (opts) => { onestarCalls.push(opts); } }));
   await new Promise((r) => setImmediate(r));
-  assert.equal(onestar, 1);
+  // After downtime the current battlelog is recorded as seen, not posted, so
+  // only attacks that occur while online are posted.
+  assert.deepEqual(onestarCalls, [{ markSeen: true }]);
 });
 
 test('runs the movements check on boot when it is Monday', async () => {
@@ -76,27 +77,10 @@ test('the movements interval tick only runs the check on a Monday', async () => 
   assert.equal(movements, 1);
 });
 
-test('on a fresh install the boot pass seeds state via mark-seen instead of posting', async () => {
-  const onestarCalls = [];
-  const movementsCalls = [];
-  startDaemon(base({
-    isFreshInstall: () => true,
-    movementsNeedsSeed: () => true,
-    runOneStarFn: async (opts) => { onestarCalls.push(opts); },
-    runMovementsFn: async (opts) => { movementsCalls.push(opts); },
-    now: () => new Date('2026-06-09T08:00:00Z'), // Tuesday: movements would normally NOT run
-  }));
-  await new Promise((r) => setImmediate(r));
-  // Both seeded with markSeen, even though it is not Monday.
-  assert.deepEqual(onestarCalls, [{ markSeen: true }]);
-  assert.deepEqual(movementsCalls, [{ markSeen: true }]);
-});
-
 test('seeds movements off-Monday when there is no tier baseline yet', async () => {
   const movementsCalls = [];
   startDaemon(base({
-    isFreshInstall: () => false, // onestar already seeded
-    movementsNeedsSeed: () => true, // but the movements snapshot has no tiers
+    movementsNeedsSeed: () => true, // the movements snapshot has no tiers
     runMovementsFn: async (opts) => { movementsCalls.push(opts); },
     now: () => new Date('2026-06-09T08:00:00Z'), // Tuesday
   }));
@@ -107,7 +91,6 @@ test('seeds movements off-Monday when there is no tier baseline yet', async () =
 test('does not seed movements on boot when a tier baseline already exists', async () => {
   const movementsCalls = [];
   startDaemon(base({
-    isFreshInstall: () => false,
     movementsNeedsSeed: () => false,
     runMovementsFn: async (opts) => { movementsCalls.push(opts); },
     now: () => new Date('2026-06-09T08:00:00Z'), // Tuesday: normal gated tick -> nothing
@@ -116,29 +99,25 @@ test('does not seed movements on boot when a tier baseline already exists', asyn
   assert.deepEqual(movementsCalls, []);
 });
 
-test('after a fresh boot, interval ticks run normally (no mark-seen)', async () => {
+test('the onestar interval tick posts normally after the boot seed', async () => {
   const onestarCalls = [];
   const { setIntervalFn, cbs } = fakeTimers();
   startDaemon(base({
-    isFreshInstall: () => true,
     runOneStarFn: async (opts) => { onestarCalls.push(opts); },
     setIntervalFn,
   }));
   await new Promise((r) => setImmediate(r));
   const onestarTick = cbs.find((c) => c.ms === 15 * 60 * 1000).cb;
   await onestarTick();
-  // Boot seeded with mark-seen; the interval tick runs normally (no opts -> run() defaults to a real post).
+  // Boot seeded with mark-seen; the interval tick runs normally (no opts -> real post).
   assert.deepEqual(onestarCalls, [{ markSeen: true }, undefined]);
 });
 
-test('logs that it is running normally when state already exists', async () => {
+test('logs that onestar is seeding its baseline on boot', async () => {
   const logs = [];
-  startDaemon(base({
-    isFreshInstall: () => false,
-    log: { warn() {}, error() {}, log: (m) => logs.push(m) },
-  }));
+  startDaemon(base({ log: { warn() {}, error() {}, log: (m) => logs.push(m) } }));
   await new Promise((r) => setImmediate(r));
-  assert.ok(logs.some((m) => /existing state.*running normally/i.test(m)), `expected a running-normally line, got: ${JSON.stringify(logs)}`);
+  assert.ok(logs.some((m) => /onestar.*seed/i.test(m)), `expected an onestar-seeding line, got: ${JSON.stringify(logs)}`);
 });
 
 test('stop clears all timers', () => {
