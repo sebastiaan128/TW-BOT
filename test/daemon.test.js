@@ -17,6 +17,7 @@ function base(overrides = {}) {
     runOneStarFn: async () => {},
     runMovementsFn: async () => {},
     isFreshInstall: () => false,
+    movementsNeedsSeed: () => false,
     now: () => new Date('2026-06-09T08:00:00Z'), // Tuesday
     setIntervalFn: fakeTimers().setIntervalFn,
     log: silent,
@@ -80,6 +81,7 @@ test('on a fresh install the boot pass seeds state via mark-seen instead of post
   const movementsCalls = [];
   startDaemon(base({
     isFreshInstall: () => true,
+    movementsNeedsSeed: () => true,
     runOneStarFn: async (opts) => { onestarCalls.push(opts); },
     runMovementsFn: async (opts) => { movementsCalls.push(opts); },
     now: () => new Date('2026-06-09T08:00:00Z'), // Tuesday: movements would normally NOT run
@@ -88,6 +90,30 @@ test('on a fresh install the boot pass seeds state via mark-seen instead of post
   // Both seeded with markSeen, even though it is not Monday.
   assert.deepEqual(onestarCalls, [{ markSeen: true }]);
   assert.deepEqual(movementsCalls, [{ markSeen: true }]);
+});
+
+test('seeds movements off-Monday when there is no tier baseline yet', async () => {
+  const movementsCalls = [];
+  startDaemon(base({
+    isFreshInstall: () => false, // onestar already seeded
+    movementsNeedsSeed: () => true, // but the movements snapshot has no tiers
+    runMovementsFn: async (opts) => { movementsCalls.push(opts); },
+    now: () => new Date('2026-06-09T08:00:00Z'), // Tuesday
+  }));
+  await new Promise((r) => setImmediate(r));
+  assert.deepEqual(movementsCalls, [{ markSeen: true }]);
+});
+
+test('does not seed movements on boot when a tier baseline already exists', async () => {
+  const movementsCalls = [];
+  startDaemon(base({
+    isFreshInstall: () => false,
+    movementsNeedsSeed: () => false,
+    runMovementsFn: async (opts) => { movementsCalls.push(opts); },
+    now: () => new Date('2026-06-09T08:00:00Z'), // Tuesday: normal gated tick -> nothing
+  }));
+  await new Promise((r) => setImmediate(r));
+  assert.deepEqual(movementsCalls, []);
 });
 
 test('after a fresh boot, interval ticks run normally (no mark-seen)', async () => {

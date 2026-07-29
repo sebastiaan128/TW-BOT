@@ -3,7 +3,7 @@
 // Pterodactyl-based Discord bot hosting). Replaces external cron: it runs the
 // existing one-shot run() functions on internal timers. All scheduling state is
 // in-memory; the per-feature dedup files still prevent double posts on restart.
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { run as runMovements } from './index.js';
 import { run as runOneStar } from './onestar.js';
 import { loadConfig } from './config.js';
@@ -24,10 +24,25 @@ function defaultIsFreshInstall() {
   }
 }
 
+// Movement detection compares live tiers against a stored per-player baseline.
+// Until that baseline exists (no snapshot, or an old snapshot with no `tiers`
+// key), the first real run would treat everyone as new and post nothing — so we
+// seed it on boot instead, regardless of weekday.
+function defaultMovementsNeedsSeed() {
+  try {
+    const path = loadConfig().snapshotPath;
+    if (!existsSync(path)) return true;
+    return !JSON.parse(readFileSync(path, 'utf8')).tiers;
+  } catch {
+    return false; // config/snapshot not readable: don't seed, let the run surface it
+  }
+}
+
 export function startDaemon({
   runOneStarFn = (opts) => runOneStar(opts),
   runMovementsFn = (opts) => runMovements(opts),
   isFreshInstall = defaultIsFreshInstall,
+  movementsNeedsSeed = defaultMovementsNeedsSeed,
   now = () => new Date(),
   setIntervalFn = setInterval,
   clearIntervalFn = clearInterval,
@@ -46,14 +61,20 @@ export function startDaemon({
     if (mondayGate()) await movementsTask();
   };
 
-  // Boot pass: seed state on a fresh install, otherwise run for real. Runs
-  // immediately so the bot works the moment the host starts it.
-  const fresh = isFreshInstall();
-  if (fresh) log.log?.('[daemon] fresh install — seeding state (mark-seen), not posting this round');
-  else log.log?.('[daemon] existing state found — running normally');
-  const bootOpts = fresh ? { markSeen: true } : {};
-  onestarTask(bootOpts);
-  movementsTick(bootOpts);
+  // Boot pass: seed state where a baseline is missing, otherwise run for real.
+  // Runs immediately so the bot works the moment the host starts it. The two
+  // features have independent baselines, so they are seeded independently.
+  const onestarFresh = isFreshInstall();
+  if (onestarFresh) log.log?.('[daemon] onestar: fresh install — seeding state (mark-seen), not posting this round');
+  else log.log?.('[daemon] onestar: existing state found — running normally');
+  onestarTask(onestarFresh ? { markSeen: true } : {});
+
+  if (movementsNeedsSeed()) {
+    log.log?.('[daemon] movements: no tier baseline yet — seeding (mark-seen), not posting this round');
+    movementsTask({ markSeen: true }); // bypass the Monday gate: seeding is safe any day
+  } else {
+    movementsTick(); // normal: gated to Mondays from ~10:00 Amsterdam
+  }
 
   const timers = [
     setIntervalFn(() => onestarTask(), ONESTAR_INTERVAL_MS),

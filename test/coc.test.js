@@ -130,132 +130,90 @@ test('legendOnePlayers skips a clan whose endpoint keeps failing and keeps the r
   assert.deepEqual(players, [{ tag: '#C', name: 'Carol' }]);
 });
 
+// Movement detection compares each player's current live tier against the tier
+// we remembered from the previous run. leaguehistory is no longer consulted.
+
+test('detectMovements flags a promotion when remembered L2 is now live L1', async () => {
+  const fetchImpl = fakeFetch({
+    '/clans/%23C1/members': { items: [
+      { tag: '#P1', name: 'Alice', leagueTier: { id: 105000036 } }, // now L1
+    ] },
+  });
+  const { promotions, demotions, currentTiers } = await detectMovements(
+    ['#C1'], 'key', { remembered: { '#P1': 'II' }, fetchImpl });
+  assert.deepEqual(promotions, [{ tag: '#P1', name: 'Alice' }]);
+  assert.deepEqual(demotions, []);
+  assert.deepEqual(currentTiers, { '#P1': 'I' });
+});
+
+test('detectMovements flags a demotion when remembered L1 is now live L2', async () => {
+  const fetchImpl = fakeFetch({
+    '/clans/%23C1/members': { items: [
+      { tag: '#P1', name: 'Bob', leagueTier: { id: 105000035 } }, // now L2
+    ] },
+  });
+  const { promotions, demotions, currentTiers } = await detectMovements(
+    ['#C1'], 'key', { remembered: { '#P1': 'I' }, fetchImpl });
+  assert.deepEqual(demotions, [{ tag: '#P1', name: 'Bob' }]);
+  assert.deepEqual(promotions, []);
+  assert.deepEqual(currentTiers, { '#P1': 'II' });
+});
+
+test('detectMovements announces nothing when the remembered tier is unchanged', async () => {
+  const fetchImpl = fakeFetch({
+    '/clans/%23C1/members': { items: [
+      { tag: '#P1', name: 'Carol', leagueTier: { id: 105000036 } }, // still L1
+    ] },
+  });
+  const { promotions, demotions, currentTiers } = await detectMovements(
+    ['#C1'], 'key', { remembered: { '#P1': 'I' }, fetchImpl });
+  assert.deepEqual(promotions, []);
+  assert.deepEqual(demotions, []);
+  assert.deepEqual(currentTiers, { '#P1': 'I' });
+});
+
+test('detectMovements seeds a never-seen player without announcing', async () => {
+  const fetchImpl = fakeFetch({
+    '/clans/%23C1/members': { items: [
+      { tag: '#P1', name: 'Newbie', leagueTier: { id: 105000036 } }, // now L1, unknown before
+    ] },
+  });
+  const { promotions, demotions, currentTiers } = await detectMovements(
+    ['#C1'], 'key', { remembered: {}, fetchImpl });
+  assert.deepEqual(promotions, []);
+  assert.deepEqual(demotions, []);
+  assert.deepEqual(currentTiers, { '#P1': 'I' }); // recorded so the next run can compare
+});
+
+test('detectMovements spans multiple clans, ignores non-Legend members', async () => {
+  const fetchImpl = fakeFetch({
+    '/clans/%23C1/members': { items: [
+      { tag: '#P1', name: 'Alice', leagueTier: { id: 105000036 } }, // now L1 (was L2 = promo)
+      { tag: '#P9', name: 'Unranked', league: { id: 29000000 } },   // no leagueTier -> ignored
+    ] },
+    '/clans/%23C2/members': { items: [
+      { tag: '#P2', name: 'Bob', leagueTier: { id: 105000035 } }, // now L2 (was L1 = demo)
+    ] },
+  });
+  const { promotions, demotions, currentTiers } = await detectMovements(
+    ['#C1', '#C2'], 'key', { remembered: { '#P1': 'II', '#P2': 'I' }, fetchImpl });
+  assert.deepEqual(promotions, [{ tag: '#P1', name: 'Alice' }]);
+  assert.deepEqual(demotions, [{ tag: '#P2', name: 'Bob' }]);
+  assert.deepEqual(currentTiers, { '#P1': 'I', '#P2': 'II' });
+});
+
 test('detectMovements skips a clan whose members endpoint keeps failing and keeps the rest', async () => {
   const fetchImpl = async (url) => {
     if (url.includes('%23BAD/members')) return { ok: false, status: 503, json: async () => ({}) };
     if (url.includes('%23C2/members')) return { ok: true, status: 200, json: async () => ({ items: [
-      { tag: '#P2', name: 'Bob', leagueTier: { id: 105000036 } }, // now L1
-    ] }) };
-    if (url.includes('/players/%23P2/leaguehistory')) return { ok: true, status: 200, json: async () => ({ items: [
-      { leagueSeasonId: 1780290000, leagueTierId: 105000035 }, // last completed: L2 -> now L1 = promoted
+      { tag: '#P2', name: 'Bob', leagueTier: { id: 105000036 } }, // now L1 (was L2 = promo)
     ] }) };
     return { ok: false, status: 404, json: async () => ({}) };
   };
   // #BAD is first; its failure must NOT abort the whole scan.
-  const { season, promotions, demotions } = await detectMovements(['#BAD', '#C2'], 'key', { fetchImpl, sleep: async () => {} });
-  assert.equal(season, 1780290000);
+  const { promotions, demotions, currentTiers } = await detectMovements(
+    ['#BAD', '#C2'], 'key', { remembered: { '#P2': 'II' }, fetchImpl, sleep: async () => {} });
   assert.deepEqual(promotions, [{ tag: '#P2', name: 'Bob' }]);
   assert.deepEqual(demotions, []);
-});
-
-test('detectMovements flags a demotion when leaguehistory has already recorded the new L2 tier', async () => {
-  // A demoted player's new tier is written into leaguehistory immediately, so the
-  // latest history record already reads L2 (== current members tier). Comparing
-  // only latest-history-vs-members misses this; we must look at the two most
-  // recent completed weeks: prior week L1 -> latest week L2 = demotion.
-  const fetchImpl = fakeFetch({
-    '/clans/%23C1/members': { items: [
-      { tag: '#P1', name: 'Daan', leagueTier: { id: 105000035 } }, // now L2
-    ] },
-    '/players/%23P1/leaguehistory': { items: [
-      { leagueSeasonId: 1782104400, leagueTierId: 105000036 }, // prior completed week: L1
-      { leagueSeasonId: 1782709200, leagueTierId: 105000035 }, // latest completed week: L2 (already recorded, adjacent week)
-    ] },
-  });
-  const { season, promotions, demotions } = await detectMovements(['#C1'], 'key', { fetchImpl });
-  assert.equal(season, 1782709200);
-  assert.deepEqual(promotions, []);
-  assert.deepEqual(demotions, [{ tag: '#P1', name: 'Daan' }]);
-});
-
-test('detectMovements does NOT re-flag a player who settled at L2 in a previous week', async () => {
-  // The original false-demotion bug: a duplicate latest week [pre-reset L1, final
-  // L2] whose prior completed week was ALSO L2. Both settled weeks are L2, so
-  // there is no fresh L1->L2 move to announce.
-  const fetchImpl = fakeFetch({
-    '/clans/%23C1/members': { items: [
-      { tag: '#P1', name: 'Gissa', leagueTier: { id: 105000035 } }, // now L2
-    ] },
-    '/players/%23P1/leaguehistory': { items: [
-      { leagueSeasonId: 1781499600, leagueTierId: 105000035 }, // prior completed week: L2
-      { leagueSeasonId: 1782709200, leagueTierId: 105000036 }, // latest week, pre-reset L1
-      { leagueSeasonId: 1782709200, leagueTierId: 105000035 }, // latest week, FINAL L2
-    ] },
-  });
-  const { promotions, demotions } = await detectMovements(['#C1'], 'key', { fetchImpl });
-  assert.deepEqual(promotions, []);
-  assert.deepEqual(demotions, []);
-});
-
-test('detectMovements does NOT flag a caught-up demotion whose two settled weeks are non-adjacent', async () => {
-  // Regression (2026-07-20): TW Bas / DM / Sander07 were demoted a week earlier
-  // and already announced, but their leaguehistory has a gap — the last L1 week
-  // is several weeks before the L2 week that landed on the current reset. Case 2
-  // compared those two non-adjacent settled weeks (L1 -> L2) and re-announced a
-  // stale demotion. A real caught-up demotion has ADJACENT completed weeks.
-  const fetchImpl = fakeFetch({
-    '/clans/%23C1/members': { items: [
-      { tag: '#P1', name: 'TW Bas', leagueTier: { id: 105000035 } }, // now L2
-    ] },
-    '/players/%23P1/leaguehistory': { items: [
-      { leagueSeasonId: 1781499600, leagueTierId: 105000036 }, // L1, four weeks before the reset
-      { leagueSeasonId: 1783918800, leagueTierId: 105000035 }, // L2 on the current reset (gap: W4,W5,W6 missing)
-    ] },
-  });
-  const { season, promotions, demotions } = await detectMovements(['#C1'], 'key', { fetchImpl });
-  assert.equal(season, 1783918800);
-  assert.deepEqual(promotions, []);
-  assert.deepEqual(demotions, []);
-});
-
-test('detectMovements skips a caught-up demotion whose latest week is older than the reset', async () => {
-  // #OLD demoted L1->L2, but its newest record predates the current reset while
-  // #NEW is active this reset. The stale demotion must not be announced now.
-  const fetchImpl = fakeFetch({
-    '/clans/%23C1/members': { items: [
-      { tag: '#OLD', name: 'Stale', leagueTier: { id: 105000035 } }, // now L2, demoted long ago
-      { tag: '#NEW', name: 'Fresh', leagueTier: { id: 105000036 } }, // now L1, promoted this reset
-    ] },
-    '/players/%23OLD/leaguehistory': { items: [
-      { leagueSeasonId: 1780894800, leagueTierId: 105000036 }, // prior week: L1
-      { leagueSeasonId: 1781499600, leagueTierId: 105000035 }, // latest (stale) week: L2
-    ] },
-    '/players/%23NEW/leaguehistory': { items: [
-      { leagueSeasonId: 1782709200, leagueTierId: 105000035 }, // latest completed week: L2 -> now L1
-    ] },
-  });
-  const { season, promotions, demotions } = await detectMovements(['#C1'], 'key', { fetchImpl });
-  assert.equal(season, 1782709200);
-  assert.deepEqual(promotions, [{ tag: '#NEW', name: 'Fresh' }]);
-  assert.deepEqual(demotions, []);
-});
-
-test('detectMovements finds L2->L1 / L1->L2 at the latest reset and skips stale histories', async () => {
-  const fetchImpl = fakeFetch({
-    // current members across two clans
-    '/clans/%23C1/members': { items: [
-      { tag: '#P1', name: 'Alice', leagueTier: { id: 105000036 } }, // now L1
-      { tag: '#P2', name: 'Bob', leagueTier: { id: 105000035 } },   // now L2
-      { tag: '#P9', name: 'Unranked', league: { id: 29000000 } },   // no leagueTier -> ignored
-    ] },
-    '/clans/%23C2/members': { items: [
-      { tag: '#P5', name: 'Stale', leagueTier: { id: 105000036 } }, // now L1 but history is old
-    ] },
-    // league histories (latest entry decides previous tier)
-    '/players/%23P1/leaguehistory': { items: [
-      { leagueSeasonId: 1779685200, leagueTierId: 105000035 },
-      { leagueSeasonId: 1780290000, leagueTierId: 105000035 }, // last completed: L2 -> now L1 = promoted
-    ] },
-    '/players/%23P2/leaguehistory': { items: [
-      { leagueSeasonId: 1780290000, leagueTierId: 105000036 }, // last completed: L1 -> now L2 = demoted
-    ] },
-    '/players/%23P5/leaguehistory': { items: [
-      { leagueSeasonId: 1779685200, leagueTierId: 105000035 }, // older season -> stale, skipped
-    ] },
-  });
-
-  const { season, promotions, demotions } = await detectMovements(['#C1', '#C2'], 'key', { fetchImpl });
-  assert.equal(season, 1780290000);
-  assert.deepEqual(promotions, [{ tag: '#P1', name: 'Alice' }]);
-  assert.deepEqual(demotions, [{ tag: '#P2', name: 'Bob' }]);
+  assert.deepEqual(currentTiers, { '#P2': 'I' }); // failed clan contributes nothing
 });

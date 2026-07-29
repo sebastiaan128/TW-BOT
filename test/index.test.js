@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { run } from '../src/index.js';
 
 function makeDeps(overrides = {}) {
-  const calls = { writes: [], posts: [], renders: [], reactions: [] };
+  const calls = { writes: [], posts: [], renders: [], reactions: [], remembered: [] };
   const deps = {
     loadConfig: () => ({
       cocApiKey: 'k', botToken: 'tok', channelId: '42', clanTags: ['#C'],
@@ -12,12 +12,15 @@ function makeDeps(overrides = {}) {
       reactions: { promoted: '🔥', demoted: '🤡' },
       snapshotPath: 'data/s.json', outDir: 'out',
     }),
-    detectMovements: async () => ({
-      season: 1780290000,
-      promotions: [{ tag: '#A', name: 'Alice' }],
-      demotions: [{ tag: '#B', name: 'Bob' }],
-    }),
-    readSnapshot: async () => null, // no prior announcement
+    detectMovements: async (_tags, _key, { remembered } = {}) => {
+      calls.remembered.push(remembered);
+      return {
+        promotions: [{ tag: '#A', name: 'Alice' }],
+        demotions: [{ tag: '#B', name: 'Bob' }],
+        currentTiers: { '#A': 'I', '#B': 'II' },
+      };
+    },
+    readSnapshot: async () => ({ tiers: {} }),
     writeSnapshot: async (_p, s) => { calls.writes.push(s); },
     renderUsername: async (type, name) => { calls.renders.push([type, name]); return Buffer.from([1]); },
     postGraphic: async (_chan, { filename }, _tok) => { calls.posts.push(filename); return { id: 'm', channel_id: 'c' }; },
@@ -28,37 +31,51 @@ function makeDeps(overrides = {}) {
   return { deps, calls };
 }
 
-test('posts each movement, reacts 🔥/🤡, and records the season', async () => {
-  const { deps, calls } = makeDeps();
+test('posts each movement, reacts 🔥/🤡, and writes the merged tiers', async () => {
+  const { deps, calls } = makeDeps({ readSnapshot: async () => ({ tiers: { '#A': 'II', '#B': 'I' } }) });
   const r = await run({}, deps);
   assert.deepEqual(calls.renders, [['promoted', 'Alice'], ['demoted', 'Bob']]);
   assert.equal(calls.posts.length, 2);
   assert.deepEqual(calls.reactions, ['🔥', '🤡']);
-  assert.deepEqual(calls.writes, [{ lastAnnouncedSeason: 1780290000 }]);
-  assert.equal(r.season, 1780290000);
+  assert.equal(calls.writes.length, 1);
+  assert.deepEqual(calls.writes[0].tiers, { '#A': 'I', '#B': 'II' });
+  assert.equal(typeof calls.writes[0].updatedAt, 'string');
+  assert.equal(r.posted.length, 2);
 });
 
-test('skips posting when this reset was already announced', async () => {
+test('passes the remembered tiers from the snapshot into detection', async () => {
+  const { deps, calls } = makeDeps({ readSnapshot: async () => ({ tiers: { '#A': 'II', '#B': 'I' } }) });
+  await run({}, deps);
+  assert.deepEqual(calls.remembered, [{ '#A': 'II', '#B': 'I' }]);
+});
+
+test('migration: an old lastAnnouncedSeason snapshot yields empty remembered but still writes tiers', async () => {
   const { deps, calls } = makeDeps({ readSnapshot: async () => ({ lastAnnouncedSeason: 1780290000 }) });
-  const r = await run({}, deps);
-  assert.equal(r.alreadyAnnounced, true);
-  assert.equal(calls.posts.length, 0);
-  assert.equal(calls.writes.length, 0);
+  await run({}, deps);
+  assert.deepEqual(calls.remembered, [{}]);
+  assert.deepEqual(calls.writes[0].tiers, { '#A': 'I', '#B': 'II' });
 });
 
-test('--force re-posts even when already announced', async () => {
-  const { deps, calls } = makeDeps({ readSnapshot: async () => ({ lastAnnouncedSeason: 1780290000 }) });
-  await run({ force: true }, deps);
-  assert.equal(calls.posts.length, 2);
-  assert.deepEqual(calls.writes, [{ lastAnnouncedSeason: 1780290000 }]);
+test('a missing snapshot (null) yields empty remembered', async () => {
+  const { deps, calls } = makeDeps({ readSnapshot: async () => null });
+  await run({}, deps);
+  assert.deepEqual(calls.remembered, [{}]);
 });
 
-test('--mark-seen records the season without posting', async () => {
-  const { deps, calls } = makeDeps();
+test('merge preserves remembered players not seen this run', async () => {
+  const { deps, calls } = makeDeps({ readSnapshot: async () => ({ tiers: { '#A': 'II', '#B': 'I', '#Z': 'I' } }) });
+  await run({}, deps);
+  // #Z is from a clan absent this run (e.g. transient API failure); keep its tier.
+  assert.deepEqual(calls.writes[0].tiers, { '#A': 'I', '#B': 'II', '#Z': 'I' });
+});
+
+test('--mark-seen writes the merged tiers without posting', async () => {
+  const { deps, calls } = makeDeps({ readSnapshot: async () => ({ tiers: { '#A': 'II' } }) });
   const r = await run({ markSeen: true }, deps);
   assert.equal(r.marked, true);
   assert.equal(calls.posts.length, 0);
-  assert.deepEqual(calls.writes, [{ lastAnnouncedSeason: 1780290000 }]);
+  assert.equal(calls.writes.length, 1);
+  assert.deepEqual(calls.writes[0].tiers, { '#A': 'I', '#B': 'II' });
 });
 
 test('state is NOT written when a post fails', async () => {
@@ -77,7 +94,7 @@ test('reaction failure does not abort the run or block the state write', async (
   const { deps, calls } = makeDeps({ addReaction: async () => { throw new Error('no perms'); } });
   const r = await run({}, deps);
   assert.equal(r.posted.length, 2);
-  assert.deepEqual(calls.writes, [{ lastAnnouncedSeason: 1780290000 }]);
+  assert.equal(calls.writes.length, 1);
 });
 
 test('dry-run saves locally and does not post or write state', async () => {
