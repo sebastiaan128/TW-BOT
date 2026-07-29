@@ -94,8 +94,26 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   // local .env ourselves if present. Env vars set directly on the host also work.
   try { process.loadEnvFile('.env'); } catch { /* no .env file: rely on real env vars */ }
 
-  startDaemon();
-  console.log('[daemon] started — onestar every 15m, promotion/demotion check Mondays from ~10:00 (Europe/Amsterdam)');
+  // Keep the always-on process up and, crucially, print the cause when something
+  // slips past the per-task guards. Without this a stray async error terminates
+  // Node, which a hosting panel then shows as an opaque restart/crash loop. We
+  // log and stay alive so the timers keep firing and the stack is visible.
+  process.on('unhandledRejection', (reason) => {
+    console.error('[daemon] unhandledRejection:', reason?.stack ?? reason);
+  });
+  process.on('uncaughtException', (err) => {
+    console.error('[daemon] uncaughtException:', err?.stack ?? err);
+  });
+
+  try {
+    startDaemon();
+    console.log('[daemon] started — onestar every 15m, promotion/demotion check Mondays from ~10:00 (Europe/Amsterdam)');
+  } catch (e) {
+    // A synchronous failure in startup (bad config/env, etc.) — surface it clearly
+    // instead of letting the process die with a bare stack the panel hides.
+    console.error('[daemon] failed to start:', e?.stack ?? e);
+    process.exit(1);
+  }
   const shutdown = (sig) => { console.log(`[daemon] ${sig} received, shutting down`); process.exit(0); };
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));
