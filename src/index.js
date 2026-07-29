@@ -18,23 +18,29 @@ const defaultDeps = {
 };
 
 export async function run(options = {}, deps = defaultDeps) {
-  const { dryRun = false, markSeen = false, force = false } = options;
+  const { dryRun = false, markSeen = false } = options;
   const d = { ...defaultDeps, ...deps };
 
   const config = d.loadConfig();
-  const { season, promotions, demotions } = await d.detectMovements(config.clanTags, config.cocApiKey);
+  const state = (await d.readSnapshot(config.snapshotPath)) ?? {};
+  const remembered = state.tiers ?? {}; // last-seen tier per player; {} on first run / old snapshot
 
-  // mark-seen: record the current reset as announced without posting. Use after
-  // posting a reset manually, or on first deploy to skip the current week.
+  const { promotions, demotions, currentTiers } =
+    await d.detectMovements(config.clanTags, config.cocApiKey, { remembered });
+
+  // Merge, not replace: a clan that failed this run contributes no currentTiers,
+  // so keep its remembered tiers rather than forgetting (and later mis-detecting)
+  // those players. updatedAt is informational.
+  const nextState = () => ({
+    tiers: { ...remembered, ...currentTiers },
+    updatedAt: new Date().toISOString(),
+  });
+
+  // mark-seen: record the current tiers as the baseline without posting. Use on
+  // first deploy to seed, or to re-baseline after posting a reset manually.
   if (markSeen) {
-    await d.writeSnapshot(config.snapshotPath, { lastAnnouncedSeason: season });
-    return { season, marked: true, posted: [] };
-  }
-
-  const state = await d.readSnapshot(config.snapshotPath);
-  const alreadyAnnounced = state?.lastAnnouncedSeason === season;
-  if (alreadyAnnounced && !force && !dryRun) {
-    return { season, alreadyAnnounced: true, posted: [] };
+    await d.writeSnapshot(config.snapshotPath, nextState());
+    return { marked: true, posted: [] };
   }
 
   const jobs = [
@@ -65,9 +71,10 @@ export async function run(options = {}, deps = defaultDeps) {
     posted.push(job);
   }
 
-  // Record the reset as announced only after every post succeeded.
-  if (!dryRun) await d.writeSnapshot(config.snapshotPath, { lastAnnouncedSeason: season });
-  return { season, posted };
+  // Record the new tiers only after every post succeeded; a re-run then sees no
+  // change and won't double-post (restart-safe idempotency).
+  if (!dryRun) await d.writeSnapshot(config.snapshotPath, nextState());
+  return { posted };
 }
 
 // CLI entrypoint
@@ -75,7 +82,6 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const options = {
     dryRun: process.argv.includes('--dry-run'),
     markSeen: process.argv.includes('--mark-seen'),
-    force: process.argv.includes('--force'),
   };
   run(options)
     .then((r) => { console.log('Done:', JSON.stringify(r)); })
