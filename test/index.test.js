@@ -2,6 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { run } from '../src/index.js';
+import { MAX_TIER_AGE_MS } from '../src/snapshot.js';
 
 function makeDeps(overrides = {}) {
   const calls = { writes: [], posts: [], renders: [], reactions: [], remembered: [] };
@@ -104,4 +105,59 @@ test('dry-run saves locally and does not post or write state', async () => {
   assert.equal(saved, 2);
   assert.equal(calls.posts.length, 0);
   assert.equal(calls.writes.length, 0);
+});
+
+test('stamps seenAt for every player observed this run', async () => {
+  const { deps, calls } = makeDeps({ readSnapshot: async () => ({ tiers: { '#A': 'II', '#B': 'I' } }) });
+  const before = Date.now();
+  await run({}, deps);
+  const { seenAt } = calls.writes[0];
+  assert.deepEqual(Object.keys(seenAt).sort(), ['#A', '#B']);
+  assert.ok(Date.parse(seenAt['#A']) >= before);
+  assert.ok(Date.parse(seenAt['#B']) >= before);
+});
+
+test('expires a player who left every tracked clan, so a rejoin is not a phantom move', async () => {
+  // #GONE was remembered as 'I' but has not been observed for over the window.
+  // They must be absent from both the comparison and the written snapshot.
+  const stale = new Date(Date.now() - MAX_TIER_AGE_MS - 1000).toISOString();
+  const { deps, calls } = makeDeps({
+    readSnapshot: async () => ({
+      tiers: { '#A': 'II', '#B': 'I', '#GONE': 'I' },
+      seenAt: { '#A': new Date().toISOString(), '#B': new Date().toISOString(), '#GONE': stale },
+      updatedAt: new Date().toISOString(),
+    }),
+  });
+  await run({}, deps);
+  assert.deepEqual(calls.remembered, [{ '#A': 'II', '#B': 'I' }]); // #GONE not compared against
+  assert.deepEqual(calls.writes[0].tiers, { '#A': 'I', '#B': 'II' }); // and pruned from the write
+  assert.ok(!('#GONE' in calls.writes[0].seenAt));
+});
+
+test('keeps a player merely missed this run (transient clan-API failure)', async () => {
+  // #Z is absent from currentTiers but was seen recently: the merge must keep
+  // them, otherwise one flaky run silently forgets a real baseline.
+  const recent = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString(); // ~1 week
+  const { deps, calls } = makeDeps({
+    readSnapshot: async () => ({
+      tiers: { '#A': 'II', '#B': 'I', '#Z': 'I' },
+      seenAt: { '#A': recent, '#B': recent, '#Z': recent },
+      updatedAt: recent,
+    }),
+  });
+  await run({}, deps);
+  assert.equal(calls.writes[0].tiers['#Z'], 'I');
+  assert.equal(calls.writes[0].seenAt['#Z'], recent); // stamp untouched: not re-observed
+});
+
+test('--mark-seen also prunes and stamps', async () => {
+  const stale = new Date(Date.now() - MAX_TIER_AGE_MS - 1000).toISOString();
+  const { deps, calls } = makeDeps({
+    readSnapshot: async () => ({
+      tiers: { '#GONE': 'I' }, seenAt: { '#GONE': stale }, updatedAt: new Date().toISOString(),
+    }),
+  });
+  await run({ markSeen: true }, deps);
+  assert.deepEqual(calls.writes[0].tiers, { '#A': 'I', '#B': 'II' });
+  assert.deepEqual(Object.keys(calls.writes[0].seenAt).sort(), ['#A', '#B']);
 });

@@ -3,7 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { loadConfig } from './config.js';
 import { detectMovements } from './coc.js';
-import { readSnapshot, writeSnapshot } from './snapshot.js';
+import { readSnapshot, writeSnapshot, pruneStaleTiers } from './snapshot.js';
 import { renderUsername } from './render.js';
 import { postGraphic, addReaction } from './discord.js';
 
@@ -23,18 +23,29 @@ export async function run(options = {}, deps = defaultDeps) {
 
   const config = d.loadConfig();
   const state = (await d.readSnapshot(config.snapshotPath)) ?? {};
-  const remembered = state.tiers ?? {}; // last-seen tier per player; {} on first run / old snapshot
+  // last-seen tier per player, minus anyone we stopped observing long enough ago
+  // that their tier can no longer be trusted (see pruneStaleTiers). {} on first
+  // run / old snapshot.
+  const { tiers: remembered, seenAt } = pruneStaleTiers(state);
 
   const { promotions, demotions, currentTiers } =
     await d.detectMovements(config.clanTags, config.cocApiKey, { remembered });
 
   // Merge, not replace: a clan that failed this run contributes no currentTiers,
   // so keep its remembered tiers rather than forgetting (and later mis-detecting)
-  // those players. updatedAt is informational.
-  const nextState = () => ({
-    tiers: { ...remembered, ...currentTiers },
-    updatedAt: new Date().toISOString(),
-  });
+  // those players. Only players actually observed get their seenAt refreshed —
+  // that stamp is what eventually expires someone who left every tracked clan.
+  // updatedAt is informational.
+  const nextState = () => {
+    const stamp = new Date().toISOString();
+    const nextSeenAt = { ...seenAt };
+    for (const tag of Object.keys(currentTiers)) nextSeenAt[tag] = stamp;
+    return {
+      tiers: { ...remembered, ...currentTiers },
+      seenAt: nextSeenAt,
+      updatedAt: stamp,
+    };
+  };
 
   // mark-seen: record the current tiers as the baseline without posting. Use on
   // first deploy to seed, or to re-baseline after posting a reset manually.

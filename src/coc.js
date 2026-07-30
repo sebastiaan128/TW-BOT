@@ -71,6 +71,8 @@ export function settledWeeks(items) {
 //   remembered L2, now L1 -> promotion;  remembered L1, now L2 -> demotion.
 // A player with no remembered tier (never seen / first run) is recorded but not
 // announced, so a fresh deploy seeds a baseline instead of flooding the channel.
+// Ranked players below Legend II are remembered as 'below' (see the loop) —
+// tracked so memory can't go stale, but never announced in either direction.
 //
 // leaguehistory is deliberately NOT consulted: it lags and has gaps, which is
 // what made history-based detection drop demotions and mis-attribute moves.
@@ -93,7 +95,18 @@ export async function detectMovements(clanTags, apiKey, { remembered = {}, fetch
     }
     for (const m of members) {
       const curTier = getTier(m);
-      if (!curTier) continue; // not in Legend 1/2 -> untracked
+      if (!curTier) {
+        // On the ranked ladder but below Legend II. Record that explicitly
+        // rather than skipping: the caller MERGES currentTiers into the
+        // remembered map, so an omitted player keeps their old tier forever. A
+        // player remembered as 'I' who dips below Legend II and later climbs
+        // back to Legend II would then look like I->II — a phantom demotion,
+        // announced weeks after the fact. 'below' keeps the memory honest.
+        // Members with no leagueTier at all aren't on the ladder; ignore them
+        // so the snapshot stays limited to ranked players.
+        if (m.leagueTier) currentTiers[m.tag] = 'below';
+        continue;
+      }
       currentTiers[m.tag] = curTier;
       const prev = remembered[m.tag];
       if (prev === 'II' && curTier === 'I') promotions.push({ tag: m.tag, name: m.name });

@@ -202,6 +202,49 @@ test('detectMovements spans multiple clans, ignores non-Legend members', async (
   assert.deepEqual(currentTiers, { '#P1': 'I', '#P2': 'II' });
 });
 
+test('detectMovements records a drop below Legend II instead of leaving a stale tier', async () => {
+  // #P1 was remembered as L1 and has fallen to tier 105000034 (below Legend II).
+  // Leaving him out of currentTiers would keep the stale 'I' in the merged
+  // snapshot forever; he must be recorded as 'below'.
+  const fetchImpl = fakeFetch({
+    '/clans/%23C1/members': { items: [
+      { tag: '#P1', name: 'Faller', leagueTier: { id: 105000034 } },
+    ] },
+  });
+  const { promotions, demotions, currentTiers } = await detectMovements(
+    ['#C1'], 'key', { remembered: { '#P1': 'I' }, fetchImpl });
+  assert.deepEqual(promotions, []);
+  assert.deepEqual(demotions, []); // leaving Legend is out of scope, never announced
+  assert.deepEqual(currentTiers, { '#P1': 'below' });
+});
+
+test('detectMovements does NOT call a climb back into Legend II a demotion', async () => {
+  // The regression: #P1 was L1 long ago, spent weeks below Legend II, and is now
+  // back at L2. With 'below' remembered this is a return, not a demotion.
+  const fetchImpl = fakeFetch({
+    '/clans/%23C1/members': { items: [
+      { tag: '#P1', name: 'Returner', leagueTier: { id: 105000035 } },
+    ] },
+  });
+  const { promotions, demotions, currentTiers } = await detectMovements(
+    ['#C1'], 'key', { remembered: { '#P1': 'below' }, fetchImpl });
+  assert.deepEqual(promotions, []);
+  assert.deepEqual(demotions, []);
+  assert.deepEqual(currentTiers, { '#P1': 'II' });
+});
+
+test('detectMovements does not announce a climb from below Legend II to Legend I', async () => {
+  const fetchImpl = fakeFetch({
+    '/clans/%23C1/members': { items: [
+      { tag: '#P1', name: 'Rocket', leagueTier: { id: 105000036 } },
+    ] },
+  });
+  const { promotions, demotions } = await detectMovements(
+    ['#C1'], 'key', { remembered: { '#P1': 'below' }, fetchImpl });
+  assert.deepEqual(promotions, []);
+  assert.deepEqual(demotions, []);
+});
+
 test('detectMovements skips a clan whose members endpoint keeps failing and keeps the rest', async () => {
   const fetchImpl = async (url) => {
     if (url.includes('%23BAD/members')) return { ok: false, status: 503, json: async () => ({}) };
