@@ -47,18 +47,25 @@ export function hourInZone(date, timeZone) {
   return Number(hour) % 24; // hour12:false can render midnight as '24' in some engines
 }
 
-// Returns a gate function that yields true at most once per Monday (in the
-// given timezone), and only from `afterHour` local time onward. Repeated ticks
-// on the same Monday return false; the gate re-arms on the next Monday. With an
-// hourly tick this fires at the first tick at/after `afterHour` — i.e. ~10:00.
-export function makeMondayGate({ timeZone = 'Europe/Amsterdam', afterHour = 10, now = () => new Date() } = {}) {
+// Returns a gate function that yields true on Mondays (in the given timezone)
+// from `afterHour` local time onward. With an hourly tick this fires at the
+// first tick at/after `afterHour` — i.e. ~10:00.
+//
+// `once: true` fires at most once per Monday. The daemon uses `once: false`:
+// movement detection now needs to see a tier change on two separate runs before
+// announcing it (see src/movements.js), so a single run per Monday could never
+// confirm anything. Re-running is safe — a confirmed move is committed to the
+// baseline, so later ticks that day see no change and post nothing.
+export function makeMondayGate({
+  timeZone = 'Europe/Amsterdam', afterHour = 10, once = true, now = () => new Date(),
+} = {}) {
   let lastFiredDay = null;
   return function shouldRun() {
     const d = now();
     if (weekdayInZone(d, timeZone) !== 1) return false;
     if (hourInZone(d, timeZone) < afterHour) return false;
     const key = dayKeyInZone(d, timeZone);
-    if (key === lastFiredDay) return false;
+    if (once && key === lastFiredDay) return false;
     lastFiredDay = key;
     return true;
   };

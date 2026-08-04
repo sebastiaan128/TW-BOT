@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { loadConfig } from './config.js';
 import { detectMovements } from './coc.js';
+import { confirmMovements } from './movements.js';
 import { readSnapshot, writeSnapshot, pruneStaleTiers } from './snapshot.js';
 import { renderUsername } from './render.js';
 import { postGraphic, addReaction } from './discord.js';
@@ -13,7 +14,7 @@ async function saveLocal(dir, filename, buffer) {
 }
 
 const defaultDeps = {
-  loadConfig, detectMovements, readSnapshot, writeSnapshot,
+  loadConfig, detectMovements, confirmMovements, readSnapshot, writeSnapshot,
   renderUsername, postGraphic, addReaction, saveLocal,
 };
 
@@ -28,20 +29,33 @@ export async function run(options = {}, deps = defaultDeps) {
   // run / old snapshot.
   const { tiers: remembered, seenAt } = pruneStaleTiers(state);
 
-  const { promotions, demotions, currentTiers } =
-    await d.detectMovements(config.clanTags, config.cocApiKey, { remembered });
+  const observed = await d.detectMovements(config.clanTags, config.cocApiKey, { remembered });
+  const { currentTiers } = observed;
+
+  // The raw move lists are a single live read of a field that is not stable
+  // across the reset window, so they are only used for the player NAMES. What
+  // actually gets announced is decided by confirmMovements, which requires the
+  // same change on two separate runs. See src/movements.js for the incident.
+  const names = Object.fromEntries(
+    [...observed.promotions, ...observed.demotions].map((p) => [p.tag, p.name]),
+  );
+  const { promotions, demotions, tiers: confirmedTiers, pending: nextPending } =
+    d.confirmMovements({ remembered, pending: state.pending ?? {}, currentTiers, names });
 
   // Merge, not replace: a clan that failed this run contributes no currentTiers,
   // so keep its remembered tiers rather than forgetting (and later mis-detecting)
   // those players. Only players actually observed get their seenAt refreshed —
   // that stamp is what eventually expires someone who left every tracked clan.
   // updatedAt is informational.
-  const nextState = () => {
+  const nextState = ({ confirmedOnly = true } = {}) => {
     const stamp = new Date().toISOString();
     const nextSeenAt = { ...seenAt };
     for (const tag of Object.keys(currentTiers)) nextSeenAt[tag] = stamp;
     return {
-      tiers: { ...remembered, ...currentTiers },
+      // confirmedTiers holds back changes still awaiting a second read;
+      // mark-seen deliberately takes the raw observation as the new baseline.
+      tiers: { ...remembered, ...(confirmedOnly ? confirmedTiers : currentTiers) },
+      pending: confirmedOnly ? nextPending : {},
       seenAt: nextSeenAt,
       updatedAt: stamp,
     };
@@ -50,7 +64,7 @@ export async function run(options = {}, deps = defaultDeps) {
   // mark-seen: record the current tiers as the baseline without posting. Use on
   // first deploy to seed, or to re-baseline after posting a reset manually.
   if (markSeen) {
-    await d.writeSnapshot(config.snapshotPath, nextState());
+    await d.writeSnapshot(config.snapshotPath, nextState({ confirmedOnly: false }));
     return { marked: true, posted: [] };
   }
 

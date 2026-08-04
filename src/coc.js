@@ -85,6 +85,7 @@ export async function detectMovements(clanTags, apiKey, { remembered = {}, fetch
   const promotions = [];
   const demotions = [];
   const currentTiers = {};
+  const seen = new Set();
   for (const tag of clanTags) {
     let members;
     try {
@@ -94,6 +95,12 @@ export async function detectMovements(clanTags, apiKey, { remembered = {}, fetch
       continue;
     }
     for (const m of members) {
+      // A player who switches clan while the scan is running shows up in BOTH
+      // clans' member lists, so without this guard the same move is reported —
+      // and posted — twice (seen live 2026-08-03: ***AKASH*** got two demotion
+      // posts, 17s apart). The first sighting wins.
+      if (seen.has(m.tag)) continue;
+      seen.add(m.tag);
       const curTier = getTier(m);
       if (!curTier) {
         // On the ranked ladder but below Legend II. Record that explicitly
