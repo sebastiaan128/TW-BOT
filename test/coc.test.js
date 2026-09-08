@@ -159,6 +159,21 @@ test('detectMovements flags a demotion when remembered L1 is now live L2', async
   assert.deepEqual(currentTiers, { '#P1': 'II' });
 });
 
+test('detectMovements reports a player found in two clans only once', async () => {
+  // A player who switches clan mid-scan appears in both clans' member lists, so
+  // the same move was pushed twice and posted twice (verified 2026-08-03:
+  // ***AKASH*** #8U2PPQV8V got two demotion posts, 17s apart).
+  const fetchImpl = fakeFetch({
+    '/clans/%23C1/members': { items: [{ tag: '#P1', name: 'Dave', leagueTier: { id: 105000035 } }] },
+    '/clans/%23C2/members': { items: [{ tag: '#P1', name: 'Dave', leagueTier: { id: 105000035 } }] },
+  });
+  const { demotions, promotions, currentTiers } = await detectMovements(
+    ['#C1', '#C2'], 'key', { remembered: { '#P1': 'I' }, fetchImpl });
+  assert.deepEqual(demotions, [{ tag: '#P1', name: 'Dave' }]);
+  assert.deepEqual(promotions, []);
+  assert.deepEqual(currentTiers, { '#P1': 'II' });
+});
+
 test('detectMovements announces nothing when the remembered tier is unchanged', async () => {
   const fetchImpl = fakeFetch({
     '/clans/%23C1/members': { items: [

@@ -73,8 +73,14 @@ test('the movements interval tick only runs the check on a Monday', async () => 
   now = new Date('2026-06-08T08:00:00Z'); // pretend it's now Monday
   await movementsTick();
   assert.equal(movements, 1);
-  await movementsTick(); // same Monday again -> gated
-  assert.equal(movements, 1);
+  // Every Monday tick runs: a tier change is only announced once two runs agree
+  // (src/movements.js), so the later ticks are what confirm or discard it.
+  await movementsTick();
+  assert.equal(movements, 2);
+
+  now = new Date('2026-06-09T08:00:00Z'); // Tuesday again -> gated
+  await movementsTick();
+  assert.equal(movements, 2);
 });
 
 test('seeds movements off-Monday when there is no tier baseline yet', async () => {

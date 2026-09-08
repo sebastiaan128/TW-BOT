@@ -38,7 +38,10 @@ export function startDaemon({
 } = {}) {
   const onestarTask = guarded(runOneStarFn, { label: 'onestar', log });
   const movementsTask = guarded(runMovementsFn, { label: 'movements', log });
-  const mondayGate = makeMondayGate({ now });
+  // once:false — every hourly tick on Monday from ~10:00 runs the check. A tier
+  // change is only announced after two runs agree (src/movements.js), so the
+  // second tick is what confirms (or discards) what the first one saw.
+  const mondayGate = makeMondayGate({ now, once: false });
 
   // The promotion/demotion check fires at most once per Monday, from ~10:00
   // Amsterdam onward; the hourly tick just asks the gate whether it's that
