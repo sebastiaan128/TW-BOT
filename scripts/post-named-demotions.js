@@ -20,8 +20,12 @@ import { renderUsername } from '../src/render.js';
 import { postGraphic, addReaction } from '../src/discord.js';
 
 const PLAYERS = [
-  { name: 'TW Gold', tag: '#PGLYY8JG' },
-  { name: 'Maassluis', tag: '#PQJ0QPGC' },
+  { name: 'rik', tag: '#8YRPGCJJ' },
+  { name: 'TW Bilan', tag: '#9LPJG28UQ' },
+  { name: 'TW Spijker', tag: '#YLG2VVCJ' },
+  { name: 'TW YesilAyi', tag: '#Y2VPJGYJ' },
+  { name: 'Bollie', tag: '#2PL2PGP2' },
+  { name: 'TW⚜️HUNTER⚜️', tag: '#88UCU809Q' },
 ];
 
 const dryRun = process.argv.includes('--dry-run');
