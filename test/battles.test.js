@@ -48,3 +48,10 @@ test('timestamped recovery after a full window gap records visible new battles e
   assert.equal(recovered.gap, true); assert.equal(recovered.newBattles.length, 1);
   assert.equal(reconcileBattles([b], recovered.state, context).newBattles.length, 0);
 });
+
+test('only a genuine zero result may omit the opponent', async () => {
+  const { validBattle } = await import('../src/battles.js');
+  assert.equal(validBattle({ battleType: 'legend', attack: true, stars: 0, destructionPercentage: 0 }), true);
+  assert.equal(validBattle({ battleType: 'legend', attack: true, stars: 1, destructionPercentage: 50 }), false);
+  assert.equal(validBattle({ battleType: 'legend', attack: true, stars: 0, destructionPercentage: 30 }), false);
+});

@@ -45,7 +45,10 @@ export function validBattle(b) {
   // Builder/farming battles and defenses have different payload shapes. They
   // contribute to window overlap, but never become ranked attack statistics.
   if (b.battleType !== 'legend' || b.attack === false) return true;
-  return b.attack === true && typeof b.opponentPlayerTag === 'string'
-    && Number.isInteger(b.stars) && b.stars >= 0 && b.stars <= 3
-    && Number.isFinite(b.destructionPercentage) && b.destructionPercentage >= 0 && b.destructionPercentage <= 100;
+  if (b.attack !== true || !Number.isInteger(b.stars) || b.stars < 0 || b.stars > 3
+    || !Number.isFinite(b.destructionPercentage) || b.destructionPercentage < 0 || b.destructionPercentage > 100) return false;
+  // Observed live: the API includes 0-star/0% records without an opponent.
+  // They remain distinguishable by timestamp and must not discard the log.
+  return (typeof b.opponentPlayerTag === 'string' && b.opponentPlayerTag.length > 0)
+    || (b.stars === 0 && b.destructionPercentage === 0 && !b.opponentPlayerTag);
 }

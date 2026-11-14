@@ -76,3 +76,15 @@ test('incomplete ranked attacks preserve the prior window and include actionable
   assert.match(result.failed[0].error, /hasOpponentTag/);
   assert.deepEqual(store.get('battles:#P0'), before);
 });
+
+test('live zero-result ranked entry without opponent does not block one-star tracking', async (t) => {
+  const { store, config } = fixture(t);
+  const resolveSeason = async () => ({ id: '2026-12', source: 'coc-api', start: Date.parse('2026-11-02T05:00:00Z'), end: Date.parse('2026-11-30T05:00:00Z') });
+  const zero = { battleType: 'legend', attack: true, stars: 0, destructionPercentage: 0, battleTimestamp: '20261109T074513.000Z' };
+  const fresh = battle('#P2', { battleTimestamp: '20261109T094513.000Z' });
+  await scanAttacks(store, config, { ...base, resolveSeason, fetchBattleLog: async () => [zero] });
+  const next = await scanAttacks(store, config, { ...base, resolveSeason, fetchBattleLog: async () => [zero, fresh] });
+  assert.deepEqual(next.failed, []); assert.equal(next.events.length, 1);
+  assert.equal(store.ranking('2026-12')[0].attacks, 2);
+  assert.equal(store.ranking('2026-12')[0].oneStars, 1);
+});
