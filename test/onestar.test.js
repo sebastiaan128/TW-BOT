@@ -56,3 +56,23 @@ test('initial timestamped history contributes to season stats without old notifi
   await scanAttacks(store, config, { ...opts, fetchBattleLog: async () => [old, fresh] });
   assert.equal(store.ranking('1793595600')[0].oneStars, 2); assert.equal(store.events().length, 1);
 });
+test('builder battles with a different schema do not discard valid ranked attacks', async (t) => {
+  const { store, config } = fixture(t);
+  const old = battle('#P9', { battleTimestamp: '20261109T074513.000Z' });
+  const builder = { battleType: 'builderBattle', battleTimestamp: '20261109T084513.000Z' };
+  const resolveSeason = async () => ({ id: '2026-12', source: 'coc-api', start: Date.parse('2026-11-02T05:00:00Z'), end: Date.parse('2026-11-30T05:00:00Z') });
+  const fresh = battle('#P2', { battleTimestamp: '20261109T094513.000Z' });
+  await scanAttacks(store, config, { ...base, resolveSeason, fetchBattleLog: async () => [old] });
+  const next = await scanAttacks(store, config, { ...base, resolveSeason, fetchBattleLog: async () => [old, builder, fresh] });
+  assert.equal(next.failed.length, 0); assert.equal(next.events.length, 1);
+  assert.equal(store.ranking('2026-12')[0].attacks, 2);
+});
+test('incomplete ranked attacks preserve the prior window and include actionable field diagnostics', async (t) => {
+  const { store, config } = fixture(t);
+  await scanAttacks(store, config, { ...base, fetchBattleLog: async () => [battle()] });
+  const before = store.get('battles:#P0');
+  const result = await scanAttacks(store, config, { ...base, fetchBattleLog: async () => [{ battleType: 'legend', attack: true, stars: 1 }] });
+  assert.equal(result.failed.length, 1);
+  assert.match(result.failed[0].error, /hasOpponentTag/);
+  assert.deepEqual(store.get('battles:#P0'), before);
+});
