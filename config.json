@@ -1,11 +1,42 @@
 {
-  "clanTags": ["#2JPVV99RP", "#9JQGJJUL", "#2LU2U00QJ", "#P8PGVJJQ", "#L2VGL9YG", "#2RJGQQURV", "#9UVV2URP", "#2C9G9VJC0", "#2CPGYU9QG", "#2C9JCR282", "#2C8JLYRJC", "#2JP9Y0P0P", "#2GYPYLJ00", "#2GRURYU2U", "#2GUGPU2CG", "#2RPV8QYR9", "#2CPG2Y9VJ", "#2J8YV8YJ", "#2Q22PUC92"],
+  "clanTags": [
+    "#2JPVV99RP",
+    "#9JQGJJUL",
+    "#2LU2U00QJ",
+    "#P8PGVJJQ",
+    "#L2VGL9YG",
+    "#2RJGQQURV",
+    "#9UVV2URP",
+    "#2C9G9VJC0",
+    "#2CPGYU9QG",
+    "#2C9JCR282",
+    "#2C8JLYRJC",
+    "#2JP9Y0P0P",
+    "#2GYPYLJ00",
+    "#2GRURYU2U",
+    "#2GUGPU2CG",
+    "#2RPV8QYR9",
+    "#2CPG2Y9VJ",
+    "#2J8YV8YJ",
+    "#2Q22PUC92"
+  ],
   "channelId": "1513470511126937731",
   "oneStar": {
     "channelId": "1513998430324920450",
     "guildId": "757958330416365638",
     "emojiName": "LaugingPepe",
-    "statePath": "data/onestar-seen.json"
+    "statePath": "data/onestar-seen.json",
+    "enabled": true,
+    "intervalMinutes": 15,
+    "stars": [
+      1
+    ],
+    "tiers": [
+      "I"
+    ],
+    "minDestruction": 0,
+    "maxDestruction": 100,
+    "ignoredPlayers": []
   },
   "snapshotPath": "data/last-snapshot.json",
   "outDir": "out",
@@ -14,42 +45,206 @@
     "demoted": ""
   },
   "reactions": {
-    "promoted": "🔥",
-    "demoted": "🤡"
+    "promoted": "\ud83d\udd25",
+    "demoted": "\ud83e\udd21"
   },
   "render": {
     "promoted": {
-      "assetPath": "assets/Promoted.png",
-      "x": 4180, "y": 2300, "maxWidth": 2150, "outputWidth": 1600,
-      "color": "#2a1a0a", "fontFamily": "Noto Sans, Noto Sans Symbols 2, sans-serif",
-      "fontWeight": "bold", "baseFontSize": 240,
+      "assetPath": "assets/v2/promoted.png",
+      "outputWidth": 1600,
+      "fontFamily": "Noto Sans, Noto Sans Symbols 2, sans-serif",
+      "fontWeight": "bold",
       "fonts": [
-        { "path": "assets/fonts/NotoSans-Bold.ttf", "family": "Noto Sans" },
-        { "path": "assets/fonts/NotoSansSymbols2-Regular.ttf", "family": "Noto Sans Symbols 2" }
+        {
+          "path": "assets/fonts/NotoSans-Bold.ttf",
+          "family": "Noto Sans"
+        },
+        {
+          "path": "assets/fonts/NotoSansSymbols2-Regular.ttf",
+          "family": "Noto Sans Symbols 2"
+        }
+      ],
+      "x": 1130,
+      "y": 470,
+      "maxWidth": 850,
+      "color": "#FFFFFF",
+      "baseFontSize": 68,
+      "labels": [
+        {
+          "text": "TW \u00b7 LEGEND LEAGUE",
+          "x": 1130,
+          "y": 210,
+          "maxWidth": 850,
+          "color": "#8CE5BE",
+          "baseFontSize": 30
+        },
+        {
+          "text": "GEPROMOVEERD",
+          "x": 1130,
+          "y": 310,
+          "maxWidth": 850,
+          "color": "#8CE5BE",
+          "baseFontSize": 72
+        },
+        {
+          "text": "LEGEND II  >  LEGEND I",
+          "x": 1130,
+          "y": 610,
+          "maxWidth": 850,
+          "color": "#D4D9E6",
+          "baseFontSize": 38
+        }
       ]
     },
     "demoted": {
-      "assetPath": "assets/Demoted.png",
-      "x": 4180, "y": 2300, "maxWidth": 2150, "outputWidth": 1600,
-      "color": "#f5e9d0", "fontFamily": "Noto Sans, Noto Sans Symbols 2, sans-serif",
-      "fontWeight": "bold", "baseFontSize": 240,
+      "assetPath": "assets/v2/demoted.png",
+      "outputWidth": 1600,
+      "fontFamily": "Noto Sans, Noto Sans Symbols 2, sans-serif",
+      "fontWeight": "bold",
       "fonts": [
-        { "path": "assets/fonts/NotoSans-Bold.ttf", "family": "Noto Sans" },
-        { "path": "assets/fonts/NotoSansSymbols2-Regular.ttf", "family": "Noto Sans Symbols 2" }
+        {
+          "path": "assets/fonts/NotoSans-Bold.ttf",
+          "family": "Noto Sans"
+        },
+        {
+          "path": "assets/fonts/NotoSansSymbols2-Regular.ttf",
+          "family": "Noto Sans Symbols 2"
+        }
+      ],
+      "x": 1130,
+      "y": 470,
+      "maxWidth": 850,
+      "color": "#FFFFFF",
+      "baseFontSize": 68,
+      "labels": [
+        {
+          "text": "TW \u00b7 LEGEND LEAGUE",
+          "x": 1130,
+          "y": 210,
+          "maxWidth": 850,
+          "color": "#F39C9C",
+          "baseFontSize": 30
+        },
+        {
+          "text": "GEDEGRADEERD",
+          "x": 1130,
+          "y": 310,
+          "maxWidth": 850,
+          "color": "#F39C9C",
+          "baseFontSize": 72
+        },
+        {
+          "text": "LEGEND I  >  LEGEND II",
+          "x": 1130,
+          "y": 610,
+          "maxWidth": 850,
+          "color": "#D4D9E6",
+          "baseFontSize": 38
+        }
       ]
     },
     "onestar": {
-      "assetPath": "assets/OneStar.png",
+      "assetPath": "assets/v2/onestar.png",
       "outputWidth": 1600,
-      "fontWeight": "bold",
       "fontFamily": "Noto Sans, Noto Sans Symbols 2, sans-serif",
+      "fontWeight": "bold",
       "fonts": [
-        { "path": "assets/fonts/NotoSans-Bold.ttf", "family": "Noto Sans" },
-        { "path": "assets/fonts/NotoSansSymbols2-Regular.ttf", "family": "Noto Sans Symbols 2" }
+        {
+          "path": "assets/fonts/NotoSans-Bold.ttf",
+          "family": "Noto Sans"
+        },
+        {
+          "path": "assets/fonts/NotoSansSymbols2-Regular.ttf",
+          "family": "Noto Sans Symbols 2"
+        }
+      ],
+      "labels": [
+        {
+          "text": "TW \u00b7 RANKED AANVAL",
+          "x": 1130,
+          "y": 200,
+          "maxWidth": 850,
+          "color": "#F5CF87",
+          "baseFontSize": 30
+        },
+        {
+          "text": "VERNIETIGING",
+          "x": 1130,
+          "y": 740,
+          "maxWidth": 850,
+          "color": "#A9B4CA",
+          "baseFontSize": 28
+        }
       ],
       "fields": [
-        { "key": "name", "x": 4220, "y": 2480, "maxWidth": 1550, "color": "#5a3a1a", "baseFontSize": 180 }
+        {
+          "key": "stars",
+          "format": "{value} \u2605",
+          "x": 1130,
+          "y": 310,
+          "maxWidth": 850,
+          "color": "#F5CF87",
+          "baseFontSize": 95
+        },
+        {
+          "key": "name",
+          "x": 1130,
+          "y": 470,
+          "maxWidth": 850,
+          "color": "#FFFFFF",
+          "baseFontSize": 68
+        },
+        {
+          "key": "destruction",
+          "x": 1130,
+          "y": 640,
+          "maxWidth": 850,
+          "color": "#F5CF87",
+          "baseFontSize": 110
+        }
       ]
     }
+  },
+  "timeZone": "Europe/Amsterdam",
+  "databasePath": "data/bot.sqlite",
+  "movements": {
+    "enabled": true,
+    "intervalMinutes": 30,
+    "afterHour": 10,
+    "recoveryDays": 2,
+    "confirmationMinutes": 5,
+    "maxMemoryDays": 14
+  },
+  "delivery": {
+    "maxPerRun": 10,
+    "maxPerChannel": 6,
+    "maxPerPlayer": 2,
+    "windowMinutes": 15,
+    "intervalSeconds": 60
+  },
+  "ranking": {
+    "enabled": true,
+    "channelId": "1513998430324920450",
+    "top": 10
+  },
+  "seasons": {
+    "leagueId": 29000022,
+    "fallback": "clashperk"
+  },
+  "summary": {
+    "enabled": true,
+    "channelId": "1513470511126937731",
+    "afterHour": 18
+  },
+  "commands": {
+    "enabled": false,
+    "guildId": "757958330416365638",
+    "host": "127.0.0.1",
+    "port": 3000
+  },
+  "health": {
+    "enabled": false,
+    "host": "127.0.0.1",
+    "port": 3001
   }
 }

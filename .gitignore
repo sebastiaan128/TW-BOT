@@ -1,6 +1,11 @@
-node_modules/
+node_modules
 data/
 out/
 .env
 .DS_Store
 .idea/
+.env.*
+!.env.example
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm

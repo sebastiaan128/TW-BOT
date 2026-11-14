@@ -1,113 +1,92 @@
-// src/daemon.js
-// Always-on entrypoint for hosts that keep a single process running (e.g.
-// Pterodactyl-based Discord bot hosting). Replaces external cron: it runs the
-// existing one-shot run() functions on internal timers. All scheduling state is
-// in-memory; the per-feature dedup files still prevent double posts on restart.
-import { existsSync, readFileSync } from 'node:fs';
-import { run as runMovements } from './index.js';
-import { run as runOneStar } from './onestar.js';
-import { loadConfig } from './config.js';
-import { guarded, makeMondayGate } from './scheduler.js';
+import { pathToFileURL } from 'node:url';
+import { createServer } from 'node:http';
+import { createRuntime, effectiveConfig, task } from './runtime.js';
+import { scanAttacks, scanMovements } from './service.js';
+import { guarded } from './scheduler.js';
+import { resetWindow } from './calendar.js';
+import { drainQueue } from './queue.js';
+import { enqueueReports, statusReport } from './reports.js';
+import { startCommandServer } from './commands.js';
 
-const MINUTE = 60 * 1000;
-export const ONESTAR_INTERVAL_MS = 15 * MINUTE;   // 1-star shame: every 15 minutes
-export const MOVEMENTS_TICK_MS = 60 * MINUTE;     // promotion/demotion: hourly tick, gated to Mondays from ~10:00 Amsterdam
-
-// Movement detection compares live tiers against a stored per-player baseline.
-// Until that baseline exists (no snapshot, or an old snapshot with no `tiers`
-// key), the first real run would treat everyone as new and post nothing — so we
-// seed it on boot instead, regardless of weekday.
-function defaultMovementsNeedsSeed() {
-  try {
-    const path = loadConfig().snapshotPath;
-    if (!existsSync(path)) return true;
-    return !JSON.parse(readFileSync(path, 'utf8')).tiers;
-  } catch {
-    return false; // config/snapshot not readable: don't seed, let the run surface it
-  }
-}
-
-export function startDaemon({
-  runOneStarFn = (opts) => runOneStar(opts),
-  runMovementsFn = (opts) => runMovements(opts),
-  movementsNeedsSeed = defaultMovementsNeedsSeed,
-  now = () => new Date(),
-  setIntervalFn = setInterval,
-  clearIntervalFn = clearInterval,
-  log = console,
+export const ONESTAR_INTERVAL_MS = 15 * 60000;
+export const MOVEMENTS_TICK_MS = 30 * 60000;
+export function startDaemon(runtime, {
+  now = () => new Date(), setIntervalFn = setInterval, clearIntervalFn = clearInterval,
+  scanAttacksFn = scanAttacks, scanMovementsFn = scanMovements, drainQueueFn = drainQueue, log = console,
+  startServers = true,
 } = {}) {
-  const onestarTask = guarded(runOneStarFn, { label: 'onestar', log });
-  const movementsTask = guarded(runMovementsFn, { label: 'movements', log });
-  // once:false — every hourly tick on Monday from ~10:00 runs the check. A tier
-  // change is only announced after two runs agree (src/movements.js), so the
-  // second tick is what confirms (or discards) what the first one saw.
-  const mondayGate = makeMondayGate({ now, once: false });
-
-  // The promotion/demotion check fires at most once per Monday, from ~10:00
-  // Amsterdam onward; the hourly tick just asks the gate whether it's that
-  // Monday-after-10:00 yet. A mark-seen boot pass runs regardless of weekday/hour
-  // — it only records the current reset as seen.
-  const movementsTick = async (opts = {}) => {
-    if (opts.markSeen) { await movementsTask(opts); return; }
-    if (mondayGate()) await movementsTask();
+  const { store, config } = runtime;
+  store.set('error:server', null);
+  let stopping = false;
+  const active = new Set();
+  const launch = (fn) => {
+    if (stopping) return Promise.resolve({ skipped: true });
+    const promise = fn(); active.add(promise); promise.then(() => active.delete(promise), () => active.delete(promise)); return promise;
   };
-
-  // Boot pass. Runs immediately so the bot works the moment the host starts it.
-  //
-  // onestar ALWAYS seeds on boot (mark-seen): after any downtime the current
-  // battlelog would otherwise all count as "new" and be rendered+posted at once,
-  // which floods the channel and OOM-kills the container. Seeding records the
-  // current attacks as seen without posting, so only attacks that happen while
-  // the bot is online get posted. The 15-min tick does the real posting.
-  log.log?.('[daemon] onestar: seeding current battlelog as baseline — only posting attacks from now on');
-  onestarTask({ markSeen: true });
-
-  if (movementsNeedsSeed()) {
-    log.log?.('[daemon] movements: no tier baseline yet — seeding (mark-seen), not posting this round');
-    movementsTask({ markSeen: true }); // bypass the Monday gate: seeding is safe any day
-  } else {
-    movementsTick(); // normal: gated to Mondays from ~10:00 Amsterdam
-  }
-
+  const featureEnabled = (feature) => config[feature].enabled && store.get(`enabled:${feature}`, true);
+  const attacks = guarded(() => launch(async () => {
+    if (!featureEnabled('oneStar')) return { skipped: true };
+    return task(runtime, 'attacks', () => scanAttacksFn(store, effectiveConfig(store, config), { now: now().getTime() }));
+  }), { label: 'attacks', log });
+  const movements = guarded((options = {}) => launch(async () => {
+    if (!featureEnabled('movements')) return { skipped: true };
+    const needsSeed = !store.get('movements');
+    if (!needsSeed && !options.forceCheck && !resetWindow(now(), { ...config.movements, timeZone: config.timeZone }).open) return { skipped: true };
+    return task(runtime, 'movements', () => scanMovementsFn(store, effectiveConfig(store, config), { markSeen: needsSeed, now: now().getTime() }));
+  }), { label: 'movements', log });
+  const delivery = guarded(() => launch(async () => {
+    enqueueReports(store, config, now().getTime());
+    return task(runtime, 'delivery', () => drainQueueFn(store, effectiveConfig(store, config)));
+  }), { label: 'delivery', log });
+  // scanAttacks seeds only never-observed players; restarts resume their windows.
+  attacks(); movements(); delivery();
   const timers = [
-    setIntervalFn(() => onestarTask(), ONESTAR_INTERVAL_MS),
-    setIntervalFn(() => movementsTick(), MOVEMENTS_TICK_MS),
+    setIntervalFn(attacks, config.oneStar.intervalMinutes * 60000),
+    setIntervalFn(movements, config.movements.intervalMinutes * 60000),
+    setIntervalFn(delivery, config.delivery.intervalSeconds * 1000),
   ];
-
+  const servers = [];
+  if (startServers && config.commands.enabled) servers.push(startCommandServer(store, config, {
+    onCheck: (feature) => { if (feature === 'attacks') attacks(); else movements({ forceCheck: true }); },
+  }));
+  if (startServers && config.health.enabled) {
+    const server = createServer((req, res) => {
+      if (req.method !== 'GET' || req.url !== '/healthz') { res.writeHead(404).end(); return; }
+      const status = statusReport(store, config, now().getTime());
+      // Public liveness endpoint exposes no clan/player IDs or error details.
+      res.writeHead(status.ok ? 200 : 503, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }).end(JSON.stringify({ ok: status.ok, at: status.at, queue: status.queue }));
+    });
+    server.listen(config.health.port, config.health.host); servers.push(server);
+  }
+  for (const server of servers) server.on('error', (error) => {
+    store.set('error:server', { at: Date.now(), message: error.message });
+    log.error('HTTP server failed', error.message);
+  });
   return {
-    stop: () => timers.forEach((t) => clearIntervalFn(t)),
-    onestarTask,
-    movementsTask,
+    attacks, movements, delivery,
+    async stop() {
+      stopping = true;
+      timers.forEach(clearIntervalFn);
+      for (const server of servers) server.close();
+      await Promise.allSettled([...active]);
+    },
   };
 }
-
-// CLI entrypoint
-if (import.meta.url === `file://${process.argv[1]}`) {
-  // The hosting panel starts `node src/daemon.js` without --env-file, so load a
-  // local .env ourselves if present. Env vars set directly on the host also work.
-  try { process.loadEnvFile('.env'); } catch { /* no .env file: rely on real env vars */ }
-
-  // Keep the always-on process up and, crucially, print the cause when something
-  // slips past the per-task guards. Without this a stray async error terminates
-  // Node, which a hosting panel then shows as an opaque restart/crash loop. We
-  // log and stay alive so the timers keep firing and the stack is visible.
-  process.on('unhandledRejection', (reason) => {
-    console.error('[daemon] unhandledRejection:', reason?.stack ?? reason);
-  });
-  process.on('uncaughtException', (err) => {
-    console.error('[daemon] uncaughtException:', err?.stack ?? err);
-  });
-
-  try {
-    startDaemon();
-    console.log('[daemon] started — onestar every 15m, promotion/demotion check Mondays from ~10:00 (Europe/Amsterdam)');
-  } catch (e) {
-    // A synchronous failure in startup (bad config/env, etc.) — surface it clearly
-    // instead of letting the process die with a bare stack the panel hides.
-    console.error('[daemon] failed to start:', e?.stack ?? e);
-    process.exit(1);
-  }
-  const shutdown = (sig) => { console.log(`[daemon] ${sig} received, shutting down`); process.exit(0); };
+export async function main() {
+  const runtime = await createRuntime();
+  const daemon = startDaemon(runtime);
+  console.log('[daemon] started; persistent queue, recovery window and season ranking enabled');
+  let exiting = false;
+  const shutdown = async (reason, code = 0) => {
+    if (exiting) return; exiting = true;
+    console.log(`[daemon] ${reason}: waiting for active tasks`);
+    const deadline = setTimeout(() => process.exit(code || 1), 30000);
+    try { await daemon.stop(); runtime.close(); clearTimeout(deadline); process.exitCode = code; }
+    catch (error) { console.error(error.message); process.exit(1); }
+  };
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));
+  process.on('unhandledRejection', (error) => { console.error(error); shutdown('unhandled rejection', 1); });
+  process.on('uncaughtException', (error) => { console.error(error); shutdown('uncaught exception', 1); });
 }
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main().catch((error) => { console.error(error.message); process.exitCode = 1; });

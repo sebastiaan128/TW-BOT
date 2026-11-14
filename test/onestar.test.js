@@ -1,113 +1,58 @@
-// test/onestar.test.js
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { run } from '../src/onestar.js';
-
-function makeDeps(overrides = {}) {
-  const calls = { posts: [], reactions: [], writes: [], renders: [], saved: 0 };
-  const battlelogs = {
-    '#A': [
-      { battleType: 'legend', attack: true, stars: 1, opponentPlayerTag: '#O1', destructionPercentage: 79 },
-      { battleType: 'legend', attack: true, stars: 1, opponentPlayerTag: '#O2', destructionPercentage: 88 },
-      { battleType: 'legend', attack: true, stars: 3, opponentPlayerTag: '#O3', destructionPercentage: 100 },
-    ],
-    '#B': [
-      { battleType: 'legend', attack: true, stars: 1, opponentPlayerTag: '#O9', destructionPercentage: 50 },
-    ],
-  };
-  calls.logs = [];
-  const deps = {
-    log: { log: (m) => calls.logs.push(m), warn: () => {} },
-    loadConfig: () => ({
-      cocApiKey: 'k', botToken: 'tok', clanTags: ['#C'],
-      render: { onestar: {} }, outDir: 'out',
-      oneStar: { channelId: '99', guildId: 'g', emojiName: 'LaugingPepe', statePath: 'data/os.json' },
-    }),
-    legendOnePlayers: async () => ([{ tag: '#A', name: 'Alice' }, { tag: '#B', name: 'Bob' }]),
-    fetchBattleLog: async (tag) => battlelogs[tag] ?? [],
-    readSnapshot: async () => ({ '#A': ['#O1|79'] }), // #A's #O1|79 already seen
-    writeSnapshot: async (_p, s) => { calls.writes.push(s); },
-    fetchEmojiId: async () => '222',
-    renderFields: async (_type, values) => { calls.renders.push(values); return Buffer.from([1]); },
-    postGraphic: async (_chan, { filename }) => { calls.posts.push(filename); return { id: 'm', channel_id: 'c' }; },
-    addReaction: async (_chan, _msg, emoji) => { calls.reactions.push(emoji); },
-    saveLocal: async () => { calls.saved++; },
-    ...overrides,
-  };
-  return { deps, calls };
-}
-
-test('posts only new 1-star attacks, reacts with custom emoji, updates state', async () => {
-  const { deps, calls } = makeDeps();
-  const r = await run({}, deps);
-  assert.deepEqual(calls.renders, [
-    { name: 'Alice', destruction: '88%' },
-    { name: 'Bob', destruction: '50%' },
-  ]);
-  assert.equal(calls.posts.length, 2);
-  assert.deepEqual(calls.reactions, ['LaugingPepe:222', 'LaugingPepe:222']);
-  const saved = calls.writes.at(-1);
-  assert.deepEqual(saved['#A'].sort(), ['#O1|79', '#O2|88']);
-  assert.deepEqual(saved['#B'], ['#O9|50']);
-  assert.equal(r.posted.length, 2);
+import { scanAttacks } from '../src/service.js';
+import { fixture, monday, member, coverage, battle, season } from './support/fixtures.js';
+const base = { now: monday, collectMembers: coverage([member()]), resolveSeason: season };
+test('seed once, count new 1-stars before sending, resume after restart', async (t) => {
+  const { store, config } = fixture(t);
+  await scanAttacks(store, config, { ...base, fetchBattleLog: async () => [battle('#P9')] });
+  const next = { ...base, fetchBattleLog: async () => [battle('#P2'), battle('#P9')] };
+  await scanAttacks(store, config, next);
+  assert.equal(store.ranking('2026-12')[0].oneStars, 1); assert.equal(store.events({ status: 'pending' }).length, 1);
+  await scanAttacks(store, config, next);
+  assert.equal(store.ranking('2026-12')[0].oneStars, 1); assert.equal(store.events().length, 1);
 });
-
-test('logs a one-line run summary of players, posts, and skips', async () => {
-  const { deps, calls } = makeDeps({
-    fetchBattleLog: async (tag) => { if (tag === '#A') throw new Error('boom'); return [{ battleType: 'legend', attack: true, stars: 1, opponentPlayerTag: '#O9', destructionPercentage: 50 }]; },
-    readSnapshot: async () => ({}),
-  });
-  await run({}, deps);
-  assert.deepEqual(calls.logs, ['onestar: 2 player(s), 1 posted, 1 skipped (seen-state: 0 players)']);
+test('records every tracked ranked attack for percentages, notification rules only select posts', async (t) => {
+  const { store, config } = fixture(t);
+  await scanAttacks(store, config, { ...base, fetchBattleLog: async () => [] });
+  await scanAttacks(store, config, { ...base, fetchBattleLog: async () => [battle('#P2', { stars: 3 }), battle('#P9')] });
+  assert.equal(store.events().length, 1); assert.equal(store.ranking('2026-12')[0].attacks, 2);
 });
-
-test('mark-seen records signatures without posting', async () => {
-  const { deps, calls } = makeDeps();
-  const r = await run({ markSeen: true }, deps);
-  assert.equal(r.marked, true);
-  assert.equal(calls.posts.length, 0);
-  const saved = calls.writes.at(-1);
-  assert.deepEqual(saved['#A'].sort(), ['#O1|79', '#O2|88']);
-  assert.deepEqual(saved['#B'], ['#O9|50']);
+test('failed or malformed battlelog preserves the last window', async (t) => {
+  const { store, config } = fixture(t);
+  await scanAttacks(store, config, { ...base, fetchBattleLog: async () => [battle()] });
+  const before = store.get('battles:#P0');
+  const result = await scanAttacks(store, config, { ...base, fetchBattleLog: async () => [{ stars: 1 }] });
+  assert.equal(result.failed.length, 1); assert.deepEqual(store.get('battles:#P0'), before);
 });
-
-test('a player whose battlelog fetch fails is skipped without touching their state', async () => {
-  const { deps, calls } = makeDeps({
-    fetchBattleLog: async (tag) => { if (tag === '#A') throw new Error('boom'); return [{ battleType: 'legend', attack: true, stars: 1, opponentPlayerTag: '#O9', destructionPercentage: 50 }]; },
-    readSnapshot: async () => ({ '#A': ['#O1|79'] }),
-  });
-  const r = await run({}, deps);
-  assert.equal(calls.posts.length, 1);
-  const saved = calls.writes.at(-1);
-  assert.deepEqual(saved['#A'], ['#O1|79']);
-  assert.deepEqual(saved['#B'], ['#O9|50']);
-  assert.equal(r.posted.length, 1);
+test('gap after downtime is visible and cannot flood channel', async (t) => {
+  const { store, config } = fixture(t);
+  await scanAttacks(store, config, { ...base, fetchBattleLog: async () => [battle('#P9')] });
+  const result = await scanAttacks(store, config, { ...base, fetchBattleLog: async () => [battle('#P2')] });
+  assert.deepEqual(result.gaps, ['#P0']); assert.equal(store.events().length, 0);
 });
-
-test('a player keeps only successfully-posted sigs when a post fails (no double-post next run)', async () => {
-  let n = 0;
-  const { deps, calls } = makeDeps({
-    legendOnePlayers: async () => ([{ tag: '#A', name: 'Alice' }]),
-    readSnapshot: async () => ({}),
-    postGraphic: async (_chan, { filename }) => { n++; if (n === 2) throw new Error('discord down'); calls.posts.push(filename); return { id: 'm', channel_id: 'c' }; },
-  });
-  await run({}, deps);
-  assert.equal(calls.posts.length, 1);
-  const saved = calls.writes.at(-1);
-  assert.deepEqual(saved['#A'], ['#O1|79']);
+test('untimed attacks spanning a season reset stay unassigned, not counted in wrong season', async (t) => {
+  const { store, config } = fixture(t);
+  await scanAttacks(store, config, { ...base, fetchBattleLog: async () => [battle('#P9')] });
+  await scanAttacks(store, config, { ...base, resolveSeason: async () => ({ id: '2027-01', source: 'coc-api' }), fetchBattleLog: async () => [battle('#P2'), battle('#P9')] });
+  assert.equal(store.ranking('2027-01').length, 0); assert.equal(store.ranking('unassigned')[0].oneStars, 1);
 });
-
-test('reaction is skipped when the emoji is not found', async () => {
-  const { deps, calls } = makeDeps({ fetchEmojiId: async () => null });
-  await run({}, deps);
-  assert.equal(calls.posts.length, 2);
-  assert.equal(calls.reactions.length, 0);
+test('preview and mark-seen never add leaderboard attacks or queue messages', async (t) => {
+  const { store, config } = fixture(t);
+  await scanAttacks(store, config, { ...base, fetchBattleLog: async () => [] });
+  await scanAttacks(store, config, { ...base, preview: true, fetchBattleLog: async () => [battle()] });
+  assert.equal(store.get('battles:#P0').keys.length, 0);
+  await scanAttacks(store, config, { ...base, markSeen: true, fetchBattleLog: async () => [battle()] });
+  assert.equal(store.events().length, 0); assert.equal(store.ranking('2026-12').length, 0);
 });
-
-test('dry-run renders locally and does not post or write state', async () => {
-  const { deps, calls } = makeDeps();
-  await run({ dryRun: true }, deps);
-  assert.equal(calls.saved, 2);
-  assert.equal(calls.posts.length, 0);
-  assert.equal(calls.writes.length, 0);
+test('initial timestamped history contributes to season stats without old notification flood', async (t) => {
+  const { store, config } = fixture(t);
+  const seasonWithDates = async () => ({ id: '1793595600', source: 'coc-api/player', start: Date.parse('2026-11-02T05:00:00Z'), end: Date.parse('2026-11-30T05:00:00Z') });
+  const old = battle('#P9', { battleTime: 75, battleTimestamp: '20261109T074513.000Z' });
+  const fresh = battle('#P2', { battleTime: 75, battleTimestamp: '20261109T084513.000Z' });
+  const opts = { ...base, resolveSeason: seasonWithDates, fetchBattleLog: async () => [old] };
+  await scanAttacks(store, config, opts);
+  assert.equal(store.ranking('1793595600')[0].oneStars, 1); assert.equal(store.events().length, 0);
+  await scanAttacks(store, config, { ...opts, fetchBattleLog: async () => [old, fresh] });
+  assert.equal(store.ranking('1793595600')[0].oneStars, 2); assert.equal(store.events().length, 1);
 });

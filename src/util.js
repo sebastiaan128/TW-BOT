@@ -7,6 +7,7 @@ export async function withRetry(fn, { retries = 3, baseDelayMs = 500, sleep } = 
       return await fn();
     } catch (e) {
       lastErr = e;
+      if (e.retryable === false) throw e;
       if (i < retries) await wait(baseDelayMs * 2 ** i);
     }
   }

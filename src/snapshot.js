@@ -1,6 +1,7 @@
 // src/snapshot.js
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readFile, open, rename, mkdir, unlink } from 'node:fs/promises';
 import { dirname } from 'node:path';
+import { randomUUID } from 'node:crypto';
 
 export async function readSnapshot(path) {
   try {
@@ -13,7 +14,18 @@ export async function readSnapshot(path) {
 
 export async function writeSnapshot(path, snapshot) {
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, JSON.stringify(snapshot, null, 2));
+  const temp = `${path}.${randomUUID()}.tmp`;
+  const file = await open(temp, 'wx', 0o600);
+  try {
+    await file.writeFile(JSON.stringify(snapshot, null, 2));
+    await file.sync();
+    await file.close();
+    await rename(temp, path);
+  } catch (error) {
+    await file.close().catch(() => {});
+    await unlink(temp).catch(() => {});
+    throw error;
+  }
 }
 
 // How long a remembered tier stays trustworthy without being re-observed.

@@ -1,50 +1,27 @@
-// src/discord.js
+import { requestJson } from './http.js';
 const DISCORD_API = 'https://discord.com/api/v10';
-
-// Posts an image with optional content to a channel using a bot token. The bot
-// must be in the guild with View Channel + Send Messages + Attach Files in the
-// target channel. Returns the created message ({ id, channel_id, ... }).
-export async function postGraphic(channelId, { filename, imageBuffer, content }, botToken, { fetchImpl = fetch } = {}) {
+export function discordRequest(path, botToken, options = {}, deps = {}) {
+  return requestJson(`${DISCORD_API}${path}`, { ...options, headers: { Authorization: `Bot ${botToken}`, ...options.headers } }, deps);
+}
+export async function postGraphic(channelId, { filename, imageBuffer, content, nonce }, botToken, deps = {}) {
+  const payload = { content: content || '', allowed_mentions: { parse: [] }, ...(nonce ? { nonce, enforce_nonce: true } : {}) };
   const form = new FormData();
-  form.append('payload_json', JSON.stringify({ content: content || '' }));
+  form.append('payload_json', JSON.stringify(payload));
   form.append('files[0]', new Blob([imageBuffer], { type: 'image/png' }), filename);
-
-  const res = await fetchImpl(`${DISCORD_API}/channels/${channelId}/messages`, {
-    method: 'POST',
-    headers: { Authorization: `Bot ${botToken}` },
-    body: form,
-  });
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(`Discord post failed: ${res.status} ${body}`);
-  }
-  return res.json();
+  return discordRequest(`/channels/${channelId}/messages`, botToken, { method: 'POST', body: form }, deps);
 }
-
-// Adds a unicode emoji reaction to a message. The bot needs the "Add Reactions"
-// permission in the channel.
-export async function addReaction(channelId, messageId, emoji, botToken, { fetchImpl = fetch } = {}) {
-  const url = `${DISCORD_API}/channels/${channelId}/messages/${messageId}/reactions/${encodeURIComponent(emoji)}/@me`;
-  const res = await fetchImpl(url, { method: 'PUT', headers: { Authorization: `Bot ${botToken}` } });
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(`Discord reaction failed: ${res.status} ${body}`);
-  }
-  return res;
+export function postText(channelId, { content, nonce }, botToken, deps = {}) {
+  return discordRequest(`/channels/${channelId}/messages`, botToken, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content, nonce, enforce_nonce: true, allowed_mentions: { parse: [] } }) }, deps);
 }
-
-// Resolves a guild custom-emoji id by name (case-insensitive). Returns null if
-// not found. Used to react with a custom emoji, which the API expects as
-// "name:id". Survives re-uploads of the emoji (id looked up fresh each run).
-export async function fetchEmojiId(guildId, name, botToken, { fetchImpl = fetch } = {}) {
-  const res = await fetchImpl(`${DISCORD_API}/guilds/${guildId}/emojis`, {
-    headers: { Authorization: `Bot ${botToken}` },
-  });
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(`Discord emojis fetch failed: ${res.status} ${body}`);
-  }
-  const emojis = await res.json();
-  const hit = emojis.find((e) => e.name?.toLowerCase() === name.toLowerCase());
-  return hit?.id ?? null;
+export function addReaction(channelId, messageId, emoji, botToken, deps = {}) {
+  return discordRequest(`/channels/${channelId}/messages/${messageId}/reactions/${encodeURIComponent(emoji)}/@me`, botToken, { method: 'PUT' }, deps);
+}
+const emojiCache = new Map();
+export async function fetchEmojiId(guildId, name, botToken, deps = {}) {
+  const key = `${guildId}:${name}`;
+  if (!deps.fetchImpl && emojiCache.get(key)?.expires > Date.now()) return emojiCache.get(key).id;
+  const emojis = await discordRequest(`/guilds/${guildId}/emojis`, botToken, {}, deps);
+  const id = emojis.find((e) => e.name?.toLowerCase() === name.toLowerCase())?.id ?? null;
+  if (!deps.fetchImpl) emojiCache.set(key, { id, expires: Date.now() + 3600000 });
+  return id;
 }
