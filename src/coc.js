@@ -1,5 +1,6 @@
 // src/coc.js
 import { withRetry } from './util.js';
+import { requestJson } from './http.js';
 
 const API_BASE = 'https://api.clashofclans.com/v1';
 
@@ -23,24 +24,22 @@ export function getTier(member) {
 
 export async function fetchClanMembers(clanTag, apiKey, { fetchImpl = fetch } = {}) {
   const encoded = encodeURIComponent(clanTag); // '#ABC' -> '%23ABC'
-  const res = await fetchImpl(`${API_BASE}/clans/${encoded}/members`, {
+  const data = await requestJson(`${API_BASE}/clans/${encoded}/members`, {
     headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
-  });
-  if (!res.ok) throw new Error(`CoC API ${res.status} for clan ${clanTag}`);
-  const data = await res.json();
-  return data.items ?? [];
+  }, { fetchImpl, retries: 0 });
+  if (!Array.isArray(data.items)) throw new Error('CoC API returned an invalid items list');
+  return data.items;
 }
 
 // Per-player weekly Legend tier history. Each item has leagueSeasonId and
 // leagueTierId. The API returns them oldest-first, but we never rely on order.
 export async function fetchLeagueHistory(playerTag, apiKey, { fetchImpl = fetch } = {}) {
   const encoded = encodeURIComponent(playerTag);
-  const res = await fetchImpl(`${API_BASE}/players/${encoded}/leaguehistory`, {
+  const data = await requestJson(`${API_BASE}/players/${encoded}/leaguehistory`, {
     headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
-  });
-  if (!res.ok) throw new Error(`CoC API ${res.status} for league history ${playerTag}`);
-  const data = await res.json();
-  return data.items ?? [];
+  }, { fetchImpl, retries: 0 });
+  if (!Array.isArray(data.items)) throw new Error('CoC API returned an invalid items list');
+  return data.items;
 }
 
 // The most recent completed-week entry, or null. A week can have multiple
@@ -112,6 +111,7 @@ export async function detectMovements(clanTags, apiKey, { remembered = {}, fetch
         // Members with no leagueTier at all aren't on the ladder; ignore them
         // so the snapshot stays limited to ranked players.
         if (m.leagueTier) currentTiers[m.tag] = 'below';
+        else if (remembered[m.tag]) currentTiers[m.tag] = 'unknown';
         continue;
       }
       currentTiers[m.tag] = curTier;
@@ -126,12 +126,11 @@ export async function detectMovements(clanTags, apiKey, { remembered = {}, fetch
 // Per-player battle log (recent ~50 battles). No timestamp/id per battle.
 export async function fetchBattleLog(playerTag, apiKey, { fetchImpl = fetch } = {}) {
   const encoded = encodeURIComponent(playerTag);
-  const res = await fetchImpl(`${API_BASE}/players/${encoded}/battlelog`, {
+  const data = await requestJson(`${API_BASE}/players/${encoded}/battlelog`, {
     headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
-  });
-  if (!res.ok) throw new Error(`CoC API ${res.status} for battlelog ${playerTag}`);
-  const data = await res.json();
-  return data.items ?? [];
+  }, { fetchImpl, retries: 0 });
+  if (!Array.isArray(data.items)) throw new Error('CoC API returned an invalid items list');
+  return data.items;
 }
 
 // 1-star Legend attacks = legend-league battle, this player attacking, exactly
@@ -149,6 +148,7 @@ export function oneStarAttacks(items) {
 // next tick once the endpoint recovers.
 export async function legendOnePlayers(clanTags, apiKey, { fetchImpl = fetch, sleep } = {}) {
   const players = [];
+  const seen = new Set();
   for (const tag of clanTags) {
     let members;
     try {
@@ -158,8 +158,32 @@ export async function legendOnePlayers(clanTags, apiKey, { fetchImpl = fetch, sl
       continue;
     }
     for (const m of members) {
-      if (getTier(m) === 'I') players.push({ tag: m.tag, name: m.name });
+      if (getTier(m) === 'I' && !seen.has(m.tag)) { players.push({ tag: m.tag, name: m.name }); seen.add(m.tag); }
     }
   }
   return players;
+}
+
+export async function fetchPlayer(tag, apiKey, deps = {}) {
+  return requestJson(`${API_BASE}/players/${encodeURIComponent(tag)}`, { headers: { Authorization: `Bearer ${apiKey}` } }, deps);
+}
+export async function fetchLeagueSeasons(leagueId, apiKey, deps = {}) {
+  return requestJson(`${API_BASE}/leagues/${encodeURIComponent(leagueId)}/seasons`, { headers: { Authorization: `Bearer ${apiKey}` } }, deps);
+}
+// One shared member collector, preserving coverage so an outage is not mistaken for a departure.
+export async function collectMembers(clanTags, apiKey, deps = {}) {
+  const players = new Map(), failed = [], succeeded = [];
+  for (const clan of clanTags) {
+    try {
+      const members = await withRetry(() => fetchClanMembers(clan, apiKey, deps), { sleep: deps.sleep });
+      if (!Array.isArray(members)) throw new Error('Invalid members payload');
+      if (members.some((m) => !m.tag || !m.name)) throw new Error('Invalid clan member');
+      succeeded.push(clan);
+      for (const member of members) {
+        if (!players.has(member.tag)) players.set(member.tag, { ...member, clan, tier: getTier(member) ?? (member.leagueTier ? 'below' : 'unknown') });
+      }
+    } catch (error) { failed.push({ clan, error: error.message }); }
+  }
+  if (!succeeded.length) throw new Error(`All clan requests failed: ${failed.map((f) => f.clan).join(', ')}`);
+  return { players: [...players.values()], failed, succeeded };
 }

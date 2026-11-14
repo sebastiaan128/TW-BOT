@@ -1,18 +1,23 @@
 {
   "name": "tw-bot",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "type": "module",
-  "engines": { "node": ">=20.6" },
+  "engines": {
+    "node": ">=22.13"
+  },
   "scripts": {
-    "test": "node --test",
-    "start": "node --env-file=.env src/index.js",
-    "serve": "node --env-file=.env src/daemon.js",
-    "dry-run": "node --env-file=.env src/index.js --dry-run",
-    "mark-seen": "node --env-file=.env src/index.js --mark-seen",
-    "onestar": "node --env-file=.env src/onestar.js",
-    "onestar:dry-run": "node --env-file=.env src/onestar.js --dry-run",
-    "onestar:mark-seen": "node --env-file=.env src/onestar.js --mark-seen",
-    "probe": "node --env-file=.env scripts/probe-tier.js"
+    "test": "node --test test/*.test.js",
+    "start": "node src/index.js",
+    "serve": "node src/daemon.js",
+    "dry-run": "node src/index.js --dry-run",
+    "mark-seen": "node src/index.js --mark-seen",
+    "onestar": "node src/onestar.js",
+    "onestar:dry-run": "node src/onestar.js --dry-run",
+    "onestar:mark-seen": "node src/onestar.js --mark-seen",
+    "probe": "node src/cli.js check movements",
+    "manage": "node src/cli.js",
+    "validate": "node src/cli.js validate",
+    "preview:assets": "node scripts/preview-assets.js"
   },
   "dependencies": {
     "@napi-rs/canvas": "^0.1.65"

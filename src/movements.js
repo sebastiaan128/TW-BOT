@@ -40,7 +40,7 @@ export const PENDING_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 // remembered tier for a change still awaiting confirmation.
 export function confirmMovements({
   remembered = {}, pending = {}, currentTiers = {}, names = {},
-  now = Date.now(),
+  now = Date.now(), maxAgeMs = PENDING_MAX_AGE_MS, minAgeMs = 0,
 } = {}) {
   const promotions = [];
   const demotions = [];
@@ -50,7 +50,7 @@ export function confirmMovements({
   // Players not observed this run (e.g. their clan endpoint failed) keep their
   // in-flight confirmation, so a transient outage doesn't restart the process.
   for (const [tag, entry] of Object.entries(pending)) {
-    if (!(tag in currentTiers)) nextPending[tag] = entry;
+    if (!(tag in currentTiers) && Date.parse(entry.at) >= now - maxAgeMs) nextPending[tag] = entry;
   }
 
   for (const [tag, live] of Object.entries(currentTiers)) {
@@ -64,7 +64,7 @@ export function confirmMovements({
     }
 
     const held = pending[tag];
-    const fresh = held && Date.parse(held.at) >= now - PENDING_MAX_AGE_MS;
+    const fresh = held && Date.parse(held.at) >= now - maxAgeMs;
     if (!fresh || held.tier !== live) {
       // First sighting of this change (or a stale/different one): hold it and
       // keep the old baseline. Nothing is announced.
@@ -73,7 +73,12 @@ export function confirmMovements({
       continue;
     }
 
-    // Second consecutive sighting: the change is real.
+    if (now - Date.parse(held.at) < minAgeMs) {
+      tiers[tag] = prev;
+      nextPending[tag] = held;
+      continue;
+    }
+    // Second sighting after the minimum interval: the change is real.
     tiers[tag] = live;
     const name = names[tag];
     if (prev === 'II' && live === 'I') promotions.push({ tag, name });
