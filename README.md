@@ -232,3 +232,24 @@ CI controleert Node 22 en 24. Tests gebruiken fakes en tijdelijke databases;
 ze posten niets naar Discord. Zie [docs/REWORK.md](docs/REWORK.md) voor de
 ontwerpkeuzes, beperkingen en verdere feature-ideeën. Afbeeldingsprompts staan in
 [docs/ASSETS.md](docs/ASSETS.md).
+
+## Railway Hobby en lokaal testen via de CoC-proxy
+
+Zet op Railway en desgewenst lokaal in `.env`:
+
+```text
+COC_API_BASE_URL=https://cocproxy.royaleapi.dev/v1
+```
+
+Maak een CoC-sleutel met toegestaan IP `45.79.218.79` en zet die als
+`COC_API_KEY`. Aanvragen en de CoC-sleutel gaan dan via de derde partij RoyaleAPI:
+https://docs.royaleapi.com/proxy. Je thuis-IP of een veranderend Railway-IP hoeft
+voor deze route niet op de sleutel te staan. Zonder deze instelling blijft de
+bot rechtstreeks de officiële API gebruiken; daarvoor moet het uitgaande IP
+van die host op de sleutel staan. Alleen de officiële API en deze expliciete
+proxy mogen als endpoint worden ingesteld; redirects worden geweigerd.
+
+Gebruik voor een lokale controle `npm run manage -- preview attacks` of
+`npm run onestar:dry-run`. Die versturen geen Discord-berichten en veranderen
+geen opgeslagen voortgang. Laat niet tegelijkertijd twee productie-instanties
+met dezelfde taak en dezelfde Discord-bestemming draaien.
