@@ -41,7 +41,11 @@ export function reconcileBattles(items, previous, { now = Date.now(), season, pl
   return { newBattles, gap, state: { keys, sequence: sequence + count, seenAt: now, season, latestTimestamp: timestamped ? Math.max(...items.map(battleTimestamp)) : (previous?.latestTimestamp ?? (items.length ? null : 0)) } };
 }
 export function validBattle(b) {
-  return b && typeof b.attack === 'boolean' && typeof b.battleType === 'string'
-    && typeof b.opponentPlayerTag === 'string' && Number.isInteger(b.stars) && b.stars >= 0 && b.stars <= 3
+  if (!b || typeof b !== 'object' || typeof b.battleType !== 'string') return false;
+  // Builder/farming battles and defenses have different payload shapes. They
+  // contribute to window overlap, but never become ranked attack statistics.
+  if (b.battleType !== 'legend' || b.attack === false) return true;
+  return b.attack === true && typeof b.opponentPlayerTag === 'string'
+    && Number.isInteger(b.stars) && b.stars >= 0 && b.stars <= 3
     && Number.isFinite(b.destructionPercentage) && b.destructionPercentage >= 0 && b.destructionPercentage <= 100;
 }

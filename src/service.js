@@ -69,7 +69,12 @@ export async function scanAttacks(store, config, { markSeen = false, preview = f
       let items;
       try {
         items = await withRetry(() => (deps.fetchBattleLog ?? fetchBattleLog)(player.tag, config.cocApiKey), { retries: 2, baseDelayMs: 300, sleep: deps.sleep });
-        if (!Array.isArray(items) || items.some((b) => !validBattle(b))) throw new Error('Invalid battlelog payload');
+        if (!Array.isArray(items)) throw new Error('Invalid battlelog payload: items is not an array');
+        const invalid = items.findIndex((b) => !validBattle(b));
+        if (invalid !== -1) {
+          const b = items[invalid];
+          throw new Error(`Invalid battlelog payload at entry ${invalid}: ${JSON.stringify({ battleType: b?.battleType, attack: b?.attack, stars: b?.stars, destructionPercentage: b?.destructionPercentage, hasOpponentTag: typeof b?.opponentPlayerTag === 'string' })}`);
+        }
       } catch (error) { failed.push({ player: player.tag, error: error.message }); continue; }
       const previous = store.get(`battles:${player.tag}`);
       const result = reconcileBattles(items, previous, { player: player.tag, now, season: season.id });
