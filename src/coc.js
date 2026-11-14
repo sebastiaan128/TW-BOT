@@ -2,7 +2,7 @@
 import { withRetry } from './util.js';
 import { requestJson } from './http.js';
 
-const API_BASE = 'https://api.clashofclans.com/v1';
+import { cocApiBase } from './coc-endpoint.js';
 
 // Legend tiers are identified by leagueTier id (verified live 2026-06-08):
 //   105000036 = Legend 1 (highest), 105000035 = Legend 2.
@@ -24,8 +24,8 @@ export function getTier(member) {
 
 export async function fetchClanMembers(clanTag, apiKey, { fetchImpl = fetch } = {}) {
   const encoded = encodeURIComponent(clanTag); // '#ABC' -> '%23ABC'
-  const data = await requestJson(`${API_BASE}/clans/${encoded}/members`, {
-    headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
+  const data = await requestJson(`${cocApiBase()}/clans/${encoded}/members`, {
+    headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' }, redirect: 'error',
   }, { fetchImpl, retries: 0 });
   if (!Array.isArray(data.items)) throw new Error('CoC API returned an invalid items list');
   return data.items;
@@ -35,8 +35,8 @@ export async function fetchClanMembers(clanTag, apiKey, { fetchImpl = fetch } = 
 // leagueTierId. The API returns them oldest-first, but we never rely on order.
 export async function fetchLeagueHistory(playerTag, apiKey, { fetchImpl = fetch } = {}) {
   const encoded = encodeURIComponent(playerTag);
-  const data = await requestJson(`${API_BASE}/players/${encoded}/leaguehistory`, {
-    headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
+  const data = await requestJson(`${cocApiBase()}/players/${encoded}/leaguehistory`, {
+    headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' }, redirect: 'error',
   }, { fetchImpl, retries: 0 });
   if (!Array.isArray(data.items)) throw new Error('CoC API returned an invalid items list');
   return data.items;
@@ -123,11 +123,11 @@ export async function detectMovements(clanTags, apiKey, { remembered = {}, fetch
   return { promotions, demotions, currentTiers };
 }
 
-// Per-player battle log (recent ~50 battles). No timestamp/id per battle.
+// Per-player battle log (recent ~50 battles). Current payloads include battleTimestamp.
 export async function fetchBattleLog(playerTag, apiKey, { fetchImpl = fetch } = {}) {
   const encoded = encodeURIComponent(playerTag);
-  const data = await requestJson(`${API_BASE}/players/${encoded}/battlelog`, {
-    headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
+  const data = await requestJson(`${cocApiBase()}/players/${encoded}/battlelog`, {
+    headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' }, redirect: 'error',
   }, { fetchImpl, retries: 0 });
   if (!Array.isArray(data.items)) throw new Error('CoC API returned an invalid items list');
   return data.items;
@@ -165,10 +165,10 @@ export async function legendOnePlayers(clanTags, apiKey, { fetchImpl = fetch, sl
 }
 
 export async function fetchPlayer(tag, apiKey, deps = {}) {
-  return requestJson(`${API_BASE}/players/${encodeURIComponent(tag)}`, { headers: { Authorization: `Bearer ${apiKey}` } }, deps);
+  return requestJson(`${cocApiBase()}/players/${encodeURIComponent(tag)}`, { headers: { Authorization: `Bearer ${apiKey}` }, redirect: 'error' }, deps);
 }
 export async function fetchLeagueSeasons(leagueId, apiKey, deps = {}) {
-  return requestJson(`${API_BASE}/leagues/${encodeURIComponent(leagueId)}/seasons`, { headers: { Authorization: `Bearer ${apiKey}` } }, deps);
+  return requestJson(`${cocApiBase()}/leagues/${encodeURIComponent(leagueId)}/seasons`, { headers: { Authorization: `Bearer ${apiKey}` }, redirect: 'error' }, deps);
 }
 // One shared member collector, preserving coverage so an outage is not mistaken for a departure.
 export async function collectMembers(clanTags, apiKey, deps = {}) {
@@ -184,6 +184,6 @@ export async function collectMembers(clanTags, apiKey, deps = {}) {
       }
     } catch (error) { failed.push({ clan, error: error.message }); }
   }
-  if (!succeeded.length) throw new Error(`All clan requests failed: ${failed.map((f) => f.clan).join(', ')}`);
+  if (!succeeded.length) throw new Error(`All clan requests failed: ${failed.map((f) => `${f.clan} (${f.error})`).join(', ')}`);
   return { players: [...players.values()], failed, succeeded };
 }

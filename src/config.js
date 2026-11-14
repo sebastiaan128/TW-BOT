@@ -1,3 +1,4 @@
+import { cocApiBase } from './coc-endpoint.js';
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,6 +12,7 @@ export function loadConfig(path = process.env.TW_CONFIG ?? resolve(PROJECT_ROOT,
   return validateConfig(JSON.parse(readFileSync(path, 'utf8')), { baseDir: dirname(resolve(path)), requireSecrets, checkAssets });
 }
 export function validateConfig(file, { baseDir = PROJECT_ROOT, requireSecrets = true, checkAssets = true } = {}) {
+  cocApiBase();
   const config = {
     ...file, cocApiKey: process.env.COC_API_KEY, botToken: process.env.DISCORD_BOT_TOKEN,
     clanTags: [...new Set(file.clanTags ?? [])], render: structuredClone(file.render ?? {}),
