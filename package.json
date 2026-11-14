@@ -20,6 +20,6 @@
     "preview:assets": "node scripts/preview-assets.js"
   },
   "dependencies": {
-    "@napi-rs/canvas": "^0.1.65"
+    "@napi-rs/canvas": "^1.1.0"
   }
 }
